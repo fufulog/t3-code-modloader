@@ -40,8 +40,8 @@ function findMainPid() {
     .map(([, pid]) => Number(pid))
     .filter((pid) => {
       try {
-        return readFileSync(`/proc/${pid}/status`, "utf8").includes("State:\tS") ||
-          readFileSync(`/proc/${pid}/status`, "utf8").includes("State:\tR");
+        // Any live state (S, R, D...); only zombies and dead processes are skipped.
+        return !/State:\s*[ZX]/.test(readFileSync(`/proc/${pid}/status`, "utf8"));
       } catch {
         return false;
       }

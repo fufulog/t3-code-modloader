@@ -14,7 +14,6 @@ if (!NS.commitGraph) {
   const NODE_R = 4;
   const COLORS = ["#0085d9", "#d9008f", "#00d90a", "#d98500", "#a300d9", "#ff0000", "#00d9cc", "#e138e8", "#85d900", "#dc5b23", "#6f24d6", "#ffcc00"];
   const UNCOMMITTED = "#808080";
-  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const PAGE = 300;
 
   // ---- bridge -------------------------------------------------------------------
@@ -85,12 +84,39 @@ if (!NS.commitGraph) {
   // ---- helpers --------------------------------------------------------------------
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const short = (h) => (h ? h.slice(0, 8) : "");
-  const pad = (n) => String(n).padStart(2, "0");
-  const fmtDate = (sec) => {
-    const d = new Date(sec * 1000);
-    return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // Status letters for the files popdown. Git's "A" is shown as "U" (new).
+  const STATUS_LETTER = { A: "U" };
+  const fmtFullDate = (sec) => new Date(sec * 1000).toLocaleString(undefined, { month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  const fmtAgo = (sec) => {
+    const s = Math.max(0, Date.now() / 1000 - sec);
+    const units = [
+      [31536000, "year"],
+      [2592000, "month"],
+      [604800, "week"],
+      [86400, "day"],
+      [3600, "hour"],
+      [60, "minute"],
+    ];
+    for (const [size, name] of units) {
+      const n = Math.floor(s / size);
+      if (n >= 1) return `${n} ${name}${n === 1 ? "" : "s"} ago`;
+    }
+    return "just now";
   };
-  const fmtLong = (sec) => new Date(sec * 1000).toString().replace(/ \(.+\)$/, "");
+  // Git bodies are hard-wrapped at ~72 columns. Re-flow plain paragraphs so the card wraps
+  // naturally; keep line breaks in lists, indented blocks and trailers.
+  const reflow = (msg) =>
+    String(msg ?? "")
+      .split(/\n{2,}/)
+      .map((para) => (/^\s*([-*•+]|\d+[.)]|\s{2,}|[A-Z][\w-]+: )/m.test(para) ? para : para.replace(/\s*\n\s*/g, " ")))
+      .join("\n\n");
+  const initials = (name) =>
+    String(name ?? "?")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0].toUpperCase())
+      .join("") || "?";
   const SVG = {
     branch: `<svg viewBox="0 0 16 16" class="t3cg-ico"><path fill="currentColor" d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>`,
     tag: `<svg viewBox="0 0 16 16" class="t3cg-ico"><path fill="currentColor" d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25zM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>`,
@@ -102,8 +128,6 @@ if (!NS.commitGraph) {
     up: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m18 15-6-6-6 6"/></svg>`,
     down: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>`,
     chevron: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-chev"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>`,
-    folder: `<svg viewBox="0 0 16 16" class="t3cg-ico"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1z"/></svg>`,
-    file: `<svg viewBox="0 0 16 16" class="t3cg-ico"><path fill="currentColor" d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5zm6.75.062V4.25c0 .138.112.25.25.25h2.688z"/></svg>`,
   };
 
   let styleLoaded = false;
@@ -309,13 +333,10 @@ if (!NS.commitGraph) {
           </div>
           <div class="t3cg-scroll">
             <table class="t3cg-table">
-              <colgroup><col data-col="graph"/><col data-col="desc"/><col data-col="date"/><col data-col="author"/><col data-col="hash"/></colgroup>
+              <colgroup><col data-col="graph"/><col data-col="desc"/></colgroup>
               <thead><tr>
                 <th data-col="graph">Graph<span class="t3cg-resize" data-col="graph"></span></th>
-                <th data-col="desc">Description<span class="t3cg-resize" data-col="desc"></span></th>
-                <th data-col="date">Date<span class="t3cg-resize" data-col="date"></span></th>
-                <th data-col="author">Author<span class="t3cg-resize" data-col="author"></span></th>
-                <th data-col="hash">Commit</th>
+                <th data-col="desc">Description</th>
               </tr></thead>
               <tbody></tbody>
             </table>
@@ -327,6 +348,17 @@ if (!NS.commitGraph) {
       this.tbody = this.$("tbody");
       this.scroller = this.$(".t3cg-scroll");
       this.$("[data-act=remotes]").checked = this.prefs.showRemote !== false;
+      // Hover card: one element reused for every commit.
+      this.card = document.createElement("div");
+      this.card.className = "t3cg-card";
+      this.card.hidden = true;
+      this.root.appendChild(this.card);
+      this.card.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
+      this.card.addEventListener("mouseleave", () => this.scheduleHide());
+      this.cardI = null;
+      this.hoverTimer = null;
+      this.hideTimer = null;
+      this.detailCache = new Map(); // full hash -> details, so hovering twice doesn't refetch
       this.bind();
       this.timer = setInterval(() => this.poll(), 3000);
       this.onFocus = () => this.poll();
@@ -335,6 +367,8 @@ if (!NS.commitGraph) {
 
     destroy() {
       clearInterval(this.timer);
+      clearTimeout(this.hoverTimer);
+      clearTimeout(this.hideTimer);
       window.removeEventListener("focus", this.onFocus);
       this.host.innerHTML = "";
     }
@@ -348,6 +382,8 @@ if (!NS.commitGraph) {
         this.expanded = null;
         this.data = null;
         this.fingerprint = null;
+        this.detailCache.clear();
+        this.hideCard();
         this.load({ reset: true });
       }
     }
@@ -456,6 +492,7 @@ if (!NS.commitGraph) {
     render() {
       const { info } = this.data;
       const scrollTop = this.scroller.scrollTop;
+      this.hideCard(); // rows are about to be replaced, so a card for the old row would point at nothing
       this.$(".t3cg-repo-name").innerHTML = `${esc(info.name)}${info.branch ? ` <span class="t3cg-muted">on</span> ${SVG.branch}<span>${esc(info.branch)}</span>` : ` <span class="t3cg-muted">(detached HEAD)</span>`}`;
       const rp = this.repoPrefs();
       this.$(".t3cg-dd-label").textContent = rp.branches?.length ? (rp.branches.length === 1 ? rp.branches[0].replace(/^refs\/(heads|remotes)\//, "") : `${rp.branches.length} selected`) : "Show All";
@@ -484,14 +521,11 @@ if (!NS.commitGraph) {
         const cls = ["t3cg-row", merge ? "t3cg-merge" : "", isHead ? "t3cg-head" : "", row.kind === "uncommitted" ? "t3cg-uncommitted" : "", this.expanded?.key === key ? "t3cg-expanded" : ""].filter(Boolean).join(" ");
         html.push(`<tr class="${cls}" data-i="${i}">
           <td class="t3cg-c-graph">${rowSvg(g, lay.width, row.kind, isHead)}</td>
-          <td class="t3cg-c-desc"><span class="t3cg-desc">${labels}${stashLabel}<span class="t3cg-subject">${esc(row.subject)}</span></span></td>
-          <td class="t3cg-c-date">${row.kind === "uncommitted" ? "*" : esc(fmtDate(row.date))}</td>
-          <td class="t3cg-c-author" title="${esc(row.email ?? "")}">${row.kind === "uncommitted" ? "*" : esc(row.author)}</td>
-          <td class="t3cg-c-hash">${row.kind === "uncommitted" ? "*" : esc(short(row.hash))}</td>
+          <td class="t3cg-c-desc"><span class="t3cg-desc">${labels}${stashLabel}<span class="t3cg-subject">${esc(row.subject)}</span>${row.kind === "uncommitted" ? "" : `<span class="t3cg-by">${esc(row.author)}</span>`}</span></td>
         </tr>`);
         if (this.expanded?.key === key) html.push(this.detailsHtml(row, g, lay.width));
       });
-      if (this.data.hasMore) html.push(`<tr class="t3cg-more"><td colspan="5"><button type="button" class="t3cg-btn" data-act="more">Load More Commits</button></td></tr>`);
+      if (this.data.hasMore) html.push(`<tr class="t3cg-more"><td colspan="2"><button type="button" class="t3cg-btn" data-act="more">Load More Commits</button></td></tr>`);
       this.tbody.innerHTML = html.join("");
       this.showMessage(this.rows.length ? "" : `<div class="t3cg-muted">No commits yet.</div>`);
       this.scroller.scrollTop = scrollTop;
@@ -518,80 +552,107 @@ if (!NS.commitGraph) {
       };
       set("graph", graphW);
       set("desc", null);
-      set("date", w.date ?? 118);
-      set("author", w.author ?? 100);
-      set("hash", w.hash ?? 74);
     }
 
-    // ---- details panel
+    // ---- hover card: full message and commit facts, shown after a short pause on a row
+    scheduleCard(tr) {
+      clearTimeout(this.hideTimer);
+      const i = Number(tr.dataset.i);
+      if (this.cardI === i) return;
+      clearTimeout(this.hoverTimer);
+      this.hoverTimer = setTimeout(() => this.showCard(i, tr), 350);
+    }
+
+    scheduleHide() {
+      clearTimeout(this.hoverTimer);
+      clearTimeout(this.hideTimer);
+      this.hideTimer = setTimeout(() => this.hideCard(), 120);
+    }
+
+    hideCard() {
+      clearTimeout(this.hoverTimer);
+      clearTimeout(this.hideTimer);
+      this.cardI = null;
+      if (this.card) this.card.hidden = true;
+    }
+
+    async showCard(i, tr) {
+      const row = this.rows?.[i];
+      if (!row || row.kind === "uncommitted" || !tr.isConnected) return;
+      this.cardI = i;
+      const cached = this.detailCache.get(row.hash);
+      this.paintCard(row, cached ?? null, tr);
+      if (cached) return;
+      try {
+        const d = await git("details", { cwd: this.cwd, hash: row.hash });
+        this.detailCache.set(row.hash, d);
+        if (this.cardI === i) this.paintCard(row, d, tr);
+      } catch (e) {
+        if (this.cardI === i) this.paintCard(row, { error: e.message }, tr);
+      }
+    }
+
+    paintCard(row, d, tr) {
+      const card = this.card;
+      const lane = this.layout?.rows[this.rows.indexOf(row)]?.color ?? "var(--t3cg-muted)";
+      const refs = (this.refsByCommit().get(row.hash) ?? []).map((r) => this.labelHtml(r, lane)).join("");
+      const message = reflow(d && !d.error ? d.body : row.subject);
+      const totalAdd = d?.files?.reduce((s, f) => s + (f.additions ?? 0), 0) ?? 0;
+      const totalDel = d?.files?.reduce((s, f) => s + (f.deletions ?? 0), 0) ?? 0;
+      const n = d?.files?.length ?? 0;
+      const stats = d && !d.error ? `<div class="t3cg-card-stats">${n} file${n === 1 ? "" : "s"} changed, <span class="t3cg-add">+${totalAdd}</span> <span class="t3cg-del">-${totalDel}</span></div>` : d?.error ? `<div class="t3cg-error">${esc(d.error)}</div>` : "";
+      card.innerHTML = `
+        <div class="t3cg-card-head">
+          <span class="t3cg-avatar" style="--lane:${lane}">${esc(initials(row.author))}</span>
+          <span><b>${esc(row.author)}</b>, ${esc(fmtAgo(row.date))} <span class="t3cg-muted">(${esc(fmtFullDate(row.date))})</span></span>
+        </div>
+        <div class="t3cg-card-msg">${esc(message ?? "")}</div>
+        ${stats}
+        ${refs ? `<div class="t3cg-card-refs">${refs}</div>` : ""}
+        <div class="t3cg-card-foot"><span class="t3cg-mono">${esc(short(row.hash))}</span> <a class="t3cg-copy" data-copy="${esc(row.hash)}" title="Copy full hash">copy</a></div>`;
+      // Place below the row; flip above if it would run off the bottom of the panel.
+      card.hidden = false;
+      const rootRect = this.root.getBoundingClientRect();
+      const rowRect = tr.getBoundingClientRect();
+      const cw = card.offsetWidth;
+      const ch = card.offsetHeight;
+      const left = Math.min(Math.max(8, rowRect.left - rootRect.left + 40), rootRect.width - cw - 8);
+      let top = rowRect.bottom - rootRect.top + 4;
+      if (top + ch > rootRect.height - 8) top = Math.max(8, rowRect.top - rootRect.top - ch - 4);
+      card.style.left = `${left}px`;
+      card.style.top = `${top}px`;
+    }
+
+    // ---- files popdown (click a row).
     detailsHtml(row, g, width) {
       const d = this.expanded?.details;
       let body;
       if (!d) body = `<div class="t3cg-muted t3cg-details-loading">Loading…</div>`;
       else if (d.error) body = `<div class="t3cg-error">${esc(d.error)}</div>`;
-      else if (row.kind === "uncommitted") body = `<div class="t3cg-details-files t3cg-details-full">${this.filesHtml(d)}</div>`;
+      else if (row.kind === "uncommitted") body = `<div class="t3cg-details-files">${this.filesHtml(d)}</div>`;
       else {
-        const parentsHtml = d.parents.map((p) => `<a class="t3cg-hash-link" data-goto="${esc(p)}">${esc(short(p))}</a>`).join(", ") || "None";
-        const sameCommitter = d.committer === d.author && d.committerEmail === d.email;
         const parentSel =
           d.parents.length > 1
             ? `<div class="t3cg-parent-sel">Compare with parent: ${d.parents
                 .map((p, i) => `<button type="button" class="t3cg-btn t3cg-btn-sm${d.comparedTo === p ? " t3cg-btn-on" : ""}" data-parent="${i + 1}">${i + 1}: ${esc(short(p))}</button>`)
                 .join("")}</div>`
             : "";
-        body = `<div class="t3cg-details-summary">
-            <div class="t3cg-kv"><b>Commit:</b> <span class="t3cg-mono">${esc(d.hash)}</span> <a class="t3cg-copy" data-copy="${esc(d.hash)}" title="Copy">copy</a></div>
-            <div class="t3cg-kv"><b>Parents:</b> <span class="t3cg-mono">${parentsHtml}</span></div>
-            <div class="t3cg-kv"><b>Author:</b> ${esc(d.author)} &lt;<a class="t3cg-mail">${esc(d.email)}</a>&gt;</div>
-            ${sameCommitter ? "" : `<div class="t3cg-kv"><b>Committer:</b> ${esc(d.committer)} &lt;${esc(d.committerEmail)}&gt;</div>`}
-            <div class="t3cg-kv"><b>Date:</b> ${esc(fmtLong(d.date))}</div>
-            ${row.kind === "stash" ? `<div class="t3cg-kv"><b>Stash:</b> ${esc(row.selector)}</div>` : ""}
-            <div class="t3cg-body">${esc(d.body)}</div>
-          </div>
-          <div class="t3cg-details-files">${parentSel}${this.filesHtml(d)}</div>`;
+        body = `<div class="t3cg-details-files">${parentSel}${this.filesHtml(d)}</div>`;
       }
-      return `<tr class="t3cg-details-row"><td class="t3cg-c-graph">${continuationSvg(g.after, width)}</td><td colspan="4"><div class="t3cg-details">
+      return `<tr class="t3cg-details-row"><td class="t3cg-c-graph">${continuationSvg(g.after, width)}</td><td><div class="t3cg-details">
         <button type="button" class="t3cg-icon-btn t3cg-details-close" data-act="close-details" title="Close">${SVG.close}</button>${body}</div></td></tr>`;
     }
 
     filesHtml(d) {
       if (!d.files.length) return `<div class="t3cg-muted">No file changes.</div>`;
-      const tree = { dirs: new Map(), files: [] };
-      d.files.forEach((f, i) => {
-        const parts = f.path.split("/");
-        let node = tree;
-        for (const p of parts.slice(0, -1)) {
-          if (!node.dirs.has(p)) node.dirs.set(p, { dirs: new Map(), files: [] });
-          node = node.dirs.get(p);
-        }
-        node.files.push({ ...f, i, name: parts.at(-1) });
+      // Flat list: file name and status only. A newly added file shows as U (new), like the request asked.
+      const rows = d.files.map((f, i) => {
+        const name = f.path.split("/").pop();
+        const letter = STATUS_LETTER[f.status] ?? f.status;
+        const title = f.oldPath && f.oldPath !== f.path ? `${f.oldPath} → ${f.path}` : f.path;
+        return `<div class="t3cg-file-row t3cg-st-${esc(f.status)}" data-file="${i}" title="${esc(title)}"><span class="t3cg-fname">${esc(name)}</span><span class="t3cg-st">${esc(letter)}</span></div>`;
       });
-      // Collapse single-child folder chains like VS Code's compact folders.
-      const render = (node, depth, prefix) => {
-        let out = "";
-        for (const [name, child] of [...node.dirs].sort((a, b) => a[0].localeCompare(b[0]))) {
-          let label = name;
-          let n = child;
-          while (n.files.length === 0 && n.dirs.size === 1) {
-            const [[cn, cc]] = n.dirs;
-            label += "/" + cn;
-            n = cc;
-          }
-          const key = prefix + label;
-          const collapsed = this.expanded?.collapsed?.has(key);
-          out += `<div class="t3cg-tree-dir" style="--depth:${depth}" data-dir="${esc(key)}">${SVG.chevron.replace("t3cg-chev", `t3cg-chev${collapsed ? " t3cg-collapsed" : ""}`)}${SVG.folder}<span>${esc(label)}</span></div>`;
-          if (!collapsed) out += render(n, depth + 1, key + "/");
-        }
-        for (const f of node.files.sort((a, b) => a.name.localeCompare(b.name))) {
-          const stat = f.additions == null ? (f.status === "U" ? "" : `<span class="t3cg-muted">binary</span>`) : `<span class="t3cg-add">+${f.additions}</span><span class="t3cg-del">-${f.deletions}</span>`;
-          const renamed = f.oldPath && f.oldPath !== f.path ? `<span class="t3cg-muted t3cg-renamed">← ${esc(f.oldPath)}</span>` : "";
-          out += `<div class="t3cg-tree-file t3cg-st-${esc(f.status)}" style="--depth:${depth}" data-file="${f.i}" title="${esc(f.path)}">${SVG.file}<span class="t3cg-fname">${esc(f.name)}</span>${renamed}<span class="t3cg-st">${esc(f.status === "U" ? "U" : f.status)}</span><span class="t3cg-stat">${stat}</span></div>`;
-        }
-        return out;
-      };
-      const totalAdd = d.files.reduce((s, f) => s + (f.additions ?? 0), 0);
-      const totalDel = d.files.reduce((s, f) => s + (f.deletions ?? 0), 0);
-      return `<div class="t3cg-files-head">${d.files.length} file${d.files.length === 1 ? "" : "s"} changed <span class="t3cg-add">+${totalAdd}</span> <span class="t3cg-del">-${totalDel}</span></div><div class="t3cg-tree">${render(tree, 0, "")}</div>`;
+      return `<div class="t3cg-file-list">${rows.join("")}</div>`;
     }
 
     async toggleDetails(i, opts = {}) {
@@ -601,8 +662,7 @@ if (!NS.commitGraph) {
         this.expanded = null;
         return this.render();
       }
-      const collapsed = this.expanded?.key === key ? this.expanded.collapsed : new Set();
-      this.expanded = { key, details: null, collapsed, row };
+      this.expanded = { key, details: null, row };
       if (!opts.parent) this.render();
       try {
         const details = row.kind === "uncommitted" ? await git("uncommittedDetails", { cwd: this.cwd }) : await git("details", { cwd: this.cwd, hash: row.hash, parent: opts.parent });
@@ -1195,29 +1255,26 @@ if (!NS.commitGraph) {
         if (act === "continue") return this.run("Continue", "continueOperation", { state: this.data.info.state });
         const copyEl = t.closest("[data-copy]");
         if (copyEl) return copy(copyEl.dataset.copy);
-        const go = t.closest("[data-goto]");
-        if (go) {
-          const i = this.rows.findIndex((r) => r.hash === go.dataset.goto);
-          if (i >= 0) {
-            this.tbody.querySelector(`tr[data-i="${i}"]`)?.scrollIntoView({ block: "center" });
-            return this.toggleDetails(i);
-          }
-          return;
-        }
         const parentBtn = t.closest("[data-parent]");
         if (parentBtn) return this.toggleDetails(this.rows.indexOf(this.expanded.row), { parent: Number(parentBtn.dataset.parent) });
-        const dir = t.closest("[data-dir]");
-        if (dir) {
-          const set = this.expanded.collapsed;
-          set.has(dir.dataset.dir) ? set.delete(dir.dataset.dir) : set.add(dir.dataset.dir);
-          return this.render();
-        }
         const fileEl = t.closest("[data-file]");
         if (fileEl) return this.openDiff(this.expanded.details.files[Number(fileEl.dataset.file)]);
         if (t.closest(".t3cg-details")) return;
         const tr = t.closest("tr.t3cg-row");
-        if (tr) this.toggleDetails(Number(tr.dataset.i));
+        if (tr) {
+          this.hideCard();
+          this.toggleDetails(Number(tr.dataset.i));
+        }
       });
+      root.addEventListener("mouseover", (e) => {
+        const tr = e.target.closest("tr.t3cg-row[data-i]");
+        if (tr) this.scheduleCard(tr);
+      });
+      root.addEventListener("mouseout", (e) => {
+        const tr = e.target.closest("tr.t3cg-row[data-i]");
+        if (tr && !tr.contains(e.relatedTarget)) this.scheduleHide();
+      });
+      this.scroller.addEventListener("scroll", () => this.hideCard(), { passive: true });
       root.addEventListener("dblclick", (e) => {
         const ref = e.target.closest("[data-ref-type=head]");
         if (ref && ref.dataset.ref) {
@@ -1277,17 +1334,13 @@ if (!NS.commitGraph) {
         const handle = e.target.closest(".t3cg-resize");
         if (!handle) return;
         e.preventDefault();
-        const col = handle.dataset.col;
         const th = handle.parentElement;
         const startX = e.clientX;
         const startW = th.getBoundingClientRect().width;
-        const target = col === "desc" ? "date" : col;
-        const targetStart = col === "desc" ? this.$('th[data-col="date"]').getBoundingClientRect().width : startW;
         const move = (ev) => {
-          const dx = ev.clientX - startX;
-          const w = Math.max(40, Math.round(col === "desc" ? targetStart - dx : startW + dx));
-          this.prefs.widths[target] = w;
-          const c = this.root.querySelector(`col[data-col="${target}"]`);
+          const w = Math.max(40, Math.round(startW + ev.clientX - startX));
+          this.prefs.widths.graph = w;
+          const c = this.root.querySelector(`col[data-col="graph"]`);
           if (c) c.style.width = `${w}px`;
         };
         const up = () => {
