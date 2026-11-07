@@ -1,0 +1,13 @@
+{
+  "name": "t3-modloader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Live-injected mods for the T3 Code desktop app (Commit Graph surface).",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node test/git.test.mjs",
+    "test:patches": "node test/patches.test.mjs",
+    "inject": "node bin/t3mod-inject.mjs"
+  }
+}
