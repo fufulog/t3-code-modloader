@@ -277,13 +277,14 @@
 .t3cg-copy-failed { color: var(--t3cg-del); }
 
 /* ---- files popdown ---- */
-/* A single subtle 1px line above and below the list, no margin or padding (as in VS Code). */
-.t3cg-details-row > td { padding: 0; vertical-align: top; height: auto; white-space: normal; border-top: 1px solid var(--t3cg-line); border-bottom: 1px solid var(--t3cg-line); }
+.t3cg-details-row > td { padding: 0; vertical-align: top; height: auto; white-space: normal; }
 .t3cg-details-wrap { position: relative; }
 .t3cg-details-row .t3cg-graph-cont { position: absolute; top: 0; left: 4px; height: 100%; }
 .t3cg-details {
   position: relative;
   margin: 0;
+  /* One subtle 1px vertical line right beside the icons, like VS Code's indent guide. */
+  border-left: 1px solid var(--t3cg-line);
   overflow: hidden;
   user-select: text;
   cursor: auto;
