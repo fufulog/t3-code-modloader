@@ -103,3 +103,8 @@ To get a client dir: `npx @electron/asar extract <mount>/resources/app.asar out`
 - Works only with local projects: git runs on this machine, so remote T3 environments are unsupported.
 - T3 nightlies can move the patch anchors. When that happens, the mod disables itself and `node test/patches.test.mjs` shows which anchor broke.
 - Native context menus come from Electron's `Menu`. They match the OS rather than T3's popovers.
+
+## Third-party assets
+
+- File-type icons in `src/mods/commit-graph/client/icons/` come from [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) 5.40.0 (MIT, licence alongside them). Regenerate with `node bin/vendor-icons.mjs <extracted package dir>`.
+- Toolbar icons (search, fetch, refresh) are [VS Code Codicons](https://github.com/microsoft/vscode-codicons) 0.0.45, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), inlined in `runtime.js`.
