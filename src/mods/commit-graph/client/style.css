@@ -54,13 +54,14 @@
   align-items: center;
   gap: 10px;
   min-height: 36px;
-  padding: 4px 8px 4px 12px;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--t3cg-border);
   flex-shrink: 0;
   overflow: hidden;
   white-space: nowrap;
 }
-.t3cg-repo { display: flex; align-items: center; min-width: 0; flex-shrink: 1; font-weight: 600; }
+/* Repo name and branch on their own line above the toolbar, so they are not squeezed by the buttons. */
+.t3cg-repo { display: flex; align-items: center; min-width: 0; flex-shrink: 0; padding: 8px 12px 2px; font-weight: 600; }
 .t3cg-repo-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t3cg-repo-name .t3cg-ico { display: inline-block; vertical-align: -1px; margin: 0 2px 0 4px; }
 .t3cg-repo-name .t3cg-ico { width: 12px; height: 12px; color: var(--t3cg-muted); }
