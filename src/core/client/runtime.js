@@ -202,7 +202,7 @@ if (!NS.core) {
         const label = st.busy ? (sel.enabled ? "Unloading…" : "Loading…") : sel.enabled ? "Unload" : "Load";
         const action = sel.builtin
           ? `<button class="t3m-btn t3m-danger" data-act="confirm-remove">Remove modloader…</button>`
-          : `<button class="t3m-btn ${sel.enabled ? "" : "t3m-primary"}" data-act="toggle" data-id="${esc(sel.id)}" ${st.busy ? "disabled" : ""}>${label}</button>`;
+          : `<button class="t3m-btn" data-act="toggle" data-id="${esc(sel.id)}" ${st.busy ? "disabled" : ""}>${label}</button>`;
         pv.innerHTML = `
           <div class="t3m-pv-head">
             <div class="t3m-pv-title"><strong>${esc(sel.name)}</strong><span class="t3m-meta">${meta}</span></div>
