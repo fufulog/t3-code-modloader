@@ -297,7 +297,7 @@
   align-items: center;
   gap: 6px;
   height: 22px;
-  padding: 0 6px;
+  padding: 0 6px 0 1px;
   border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
