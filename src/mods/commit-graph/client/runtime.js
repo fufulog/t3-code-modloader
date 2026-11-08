@@ -868,11 +868,12 @@ if (!NS.commitGraph) {
         </div>`;
       const r = btn.getBoundingClientRect();
       const rr = this.root.getBoundingClientRect();
-      dd.style.left = `${r.left - rr.left}px`;
       dd.style.top = `${r.bottom - rr.top + 4}px`;
       this.root.appendChild(dd);
+      // Keep it inside the panel: a dropdown poking past the edge made the browser scroll the panel sideways.
+      dd.style.left = `${Math.max(8, Math.min(r.left - rr.left, rr.width - dd.offsetWidth - 8))}px`;
       const input = dd.querySelector("input[type=text]");
-      input.focus();
+      input.focus({ preventScroll: true });
       input.addEventListener("input", () => {
         const q = input.value.toLowerCase();
         dd.querySelectorAll(".t3cg-dd-opt[data-label]").forEach((el) => (el.hidden = !el.dataset.label.includes(q)));
@@ -907,7 +908,7 @@ if (!NS.commitGraph) {
       dd.style.right = `${rr.right - r.right}px`;
       dd.style.top = `${r.bottom - rr.top + 4}px`;
       this.root.appendChild(dd);
-      dd.querySelector("input")?.focus();
+      dd.querySelector("input")?.focus({ preventScroll: true });
       dismissable(dd, btn);
     }
 

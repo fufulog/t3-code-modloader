@@ -8,7 +8,8 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  /* clip, not hidden: a hidden box can still be scrolled by focus/scrollIntoView, which shifted the whole view. */
+  overflow: clip;
 }
 
 /* Theme tokens, also on the hover card, which lives on <body> outside the panel. */
@@ -393,6 +394,7 @@
   position: absolute;
   z-index: 25;
   width: 300px;
+  max-width: calc(100% - 16px);
   max-height: 60%;
   display: flex;
   flex-direction: column;
