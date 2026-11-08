@@ -155,4 +155,30 @@ module.exports = [
       );
     },
   },
+
+  // ---- T3's own diff renderer (optional: the plain diff view is the fallback) --------
+  // Each patch appends one export alias to a chunk T3 already ships, so the runtime can import()
+  // the same module instance T3's diff panel uses. A miss only means the plain view stays.
+  {
+    id: "diff-component",
+    optional: true,
+    file: /^FileDiff-[\w-]+\.js$/,
+    apply: (src) => {
+      const m = [...src.matchAll(/function ([\w$]+)\(\{fileDiff:[\w$]+,options:[\w$]+,editorOptions:/g)];
+      if (m.length !== 1) throw new Error(`diff-component: anchor matched ${m.length}x (want 1)`);
+      return `${src}\nexport{${m[0][1]} as __t3mod_FileDiff};`;
+    },
+  },
+  {
+    id: "diff-parse",
+    optional: true,
+    file: /^diffRendering-[\w-]+\.js$/,
+    apply: (src) => {
+      const parse = [...src.matchAll(/function ([\w$]+)\([\w$]+,[\w$]+,[\w$]+,[\w$]+=!1\)\{if\([\w$]+===null&&[\w$]+===null\)throw Error\(`parseDiffFromFile: You must pass/g)];
+      const theme = [...src.matchAll(/\{light:[\w$]+,dark:`pierre-dark`\};function ([\w$]+)\(/g)];
+      if (parse.length !== 1) throw new Error(`diff-parse: parseDiffFromFile matched ${parse.length}x (want 1)`);
+      if (theme.length !== 1) throw new Error(`diff-parse: theme lookup matched ${theme.length}x (want 1)`);
+      return `${src}\nexport{${parse[0][1]} as __t3mod_parseDiffFromFile,${theme[0][1]} as __t3mod_themeName};`;
+    },
+  },
 ];

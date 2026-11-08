@@ -328,6 +328,39 @@ async function fileDiff(root, p) {
   return { diff: out.length > DIFF_LIMIT ? out.slice(0, DIFF_LIMIT) : out, truncated: out.length > DIFF_LIMIT };
 }
 
+// Both sides of a file diff as text, for T3's own diff renderer (it builds the hunks, folds unchanged
+// lines and lets you expand them). A missing side is null (added/deleted file); binary or huge files
+// come back as { unavailable: true } so the caller can fall back to the plain diff.
+const SIDE_LIMIT = 2 * 1024 * 1024;
+async function fileSides(root, p) {
+  const file = relPath(p.path);
+  const old = p.oldPath ? relPath(p.oldPath) : file;
+  const blob = async (rev, name) => {
+    const r = await git(root, ["cat-file", "blob", `${rev}:${name}`], { allowFail: true, maxBuffer: SIDE_LIMIT * 2 });
+    return r.code === 0 ? r.stdout : null;
+  };
+  let before;
+  let after;
+  if (p.hash === "*") {
+    before = await blob("HEAD", old);
+    const abs = path.join(root, file);
+    try {
+      const st = fs.lstatSync(abs);
+      after = st.isFile() && st.size <= SIDE_LIMIT ? fs.readFileSync(abs, "utf8") : st.isFile() ? undefined : null;
+    } catch {
+      after = null;
+    }
+  } else {
+    const h = hash(p.hash);
+    const base = p.base ? hash(p.base) : `${h}^`;
+    before = await blob(base, old);
+    after = await blob(h, file);
+  }
+  const bad = (v) => v === undefined || (typeof v === "string" && (v.length > SIDE_LIMIT || v.includes("\0")));
+  if (bad(before) || bad(after)) return { unavailable: true };
+  return { before, after, name: file, oldName: old };
+}
+
 async function fingerprint(root) {
   const dir = await gitDir(root);
   const [r, head, st, stashes] = await Promise.all([
@@ -486,6 +519,7 @@ const reads = {
   details,
   uncommittedDetails,
   fileDiff,
+  fileSides,
   fingerprint,
 };
 

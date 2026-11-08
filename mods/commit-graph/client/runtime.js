@@ -773,6 +773,7 @@ if (!NS.commitGraph) {
         <div class="t3cg-seg" role="group" aria-label="View"><button type="button" class="t3cg-icon-btn t3cg-on" data-view="diff" title="Diff" aria-label="Diff" aria-pressed="true">${SVG.diff}</button><button type="button" class="t3cg-icon-btn" data-view="full" title="Full file" aria-label="Full file" aria-pressed="false">${SVG.file}</button></div></div>
         <div class="t3cg-diff-body"><div class="t3cg-muted" style="padding:12px">Loading diff…</div></div>`;
       const close = () => {
+        unmountT3();
         overlay.remove();
         this.root.focus();
       };
@@ -794,19 +795,47 @@ if (!NS.commitGraph) {
       const body = overlay.querySelector(".t3cg-diff-body");
       const cache = {};
       const target = isUncommitted ? "*" : d.hash;
+      const query = { cwd: this.cwd, hash: target, base: isUncommitted ? undefined : d.comparedTo ?? undefined, path: file.path, oldPath: file.oldPath };
       const load = (full) => async () => {
-        const res = await git("fileDiff", {
-          cwd: this.cwd,
-          hash: target,
-          base: isUncommitted ? undefined : d.comparedTo ?? undefined,
-          path: file.path,
-          oldPath: file.oldPath,
-          untracked: isUncommitted && file.status === "U",
-          full,
-        });
+        const res = await git("fileDiff", { ...query, untracked: isUncommitted && file.status === "U", full });
         return renderDiff(res.diff, { full }) + (res.truncated ? `<div class="t3cg-muted" style="padding:8px">${full ? "File" : "Diff"} truncated.</div>` : "");
       };
       const loaders = { diff: load(false), full: load(true) };
+
+      // T3's renderer needs both sides of the file; null means it is not available and the plain view is shown.
+      const t3 = (async () => {
+        const lib = await loadT3Diff();
+        if (!lib || !this.react) return null;
+        const sides = await git("fileSides", query);
+        if (sides.unavailable) return null;
+        const fileDiff = lib.parse(sides.before == null ? null : { name: sides.oldName, contents: sides.before }, sides.after == null ? null : { name: sides.name, contents: sides.after });
+        return { lib, fileDiff };
+      })().catch((e) => {
+        console.debug("[t3mod] commit-graph: T3 diff failed", e);
+        return null;
+      });
+      let portal = null;
+      const unmountT3 = () => {
+        portal?.remove();
+        portal = null;
+      };
+      const showT3 = (ready, view) => {
+        const { lib, fileDiff } = ready;
+        const themeType = document.documentElement.classList.contains("dark") ? "dark" : "light";
+        const element = () =>
+          this.react.jsx(lib.FileDiff, {
+            fileDiff,
+            options: { diffStyle: "unified", lineDiffType: "none", overflow: "scroll", theme: lib.themeName?.(themeType), themeType, disableFileHeader: true, expandUnchanged: view === "full" },
+          });
+        if (!portal) {
+          body.innerHTML = "";
+          const host = document.createElement("div");
+          host.className = "t3cg-t3diff";
+          body.appendChild(host);
+          portal = this.mountReact(host, lib.createPortal, element);
+        } else portal.update(element);
+        body.scrollTop = 0;
+      };
       let current = null;
       const show = async (view) => {
         current = view;
@@ -815,6 +844,9 @@ if (!NS.commitGraph) {
           b.classList.toggle("t3cg-on", on);
           b.setAttribute("aria-pressed", String(on));
         }
+        const ready = await t3;
+        if (current !== view) return;
+        if (ready) return showT3(ready, view);
         if (cache[view] === undefined) {
           body.innerHTML = `<div class="t3cg-muted" style="padding:12px">Loading…</div>`;
           try {
@@ -829,6 +861,20 @@ if (!NS.commitGraph) {
         }
       };
       show("diff");
+    }
+
+    // Render a React element into a plain DOM node through a portal owned by the surface's React tree.
+    mountReact(container, createPortal, element) {
+      const id = ++portalIds;
+      const entry = { id, render: () => createPortal(element(), container, String(id)) };
+      this.react.setPortals((list) => [...list, entry]);
+      return {
+        update: (next) => {
+          entry.render = () => createPortal(next(), container, String(id));
+          this.react.setPortals((list) => [...list]);
+        },
+        remove: () => this.react.setPortals((list) => list.filter((p) => p.id !== id)),
+      };
     }
 
     // ---- find
@@ -1528,12 +1574,41 @@ if (!NS.commitGraph) {
     return `<table class="t3cg-diff">${out.join("")}</table>`;
   }
 
+  // ---- T3's own diff renderer ---------------------------------------------------------
+  // The optional patches in patches.cjs add export aliases to T3's diff chunks; here we import() those same
+  // modules (the file names are hashed, so the loader lists them) and render T3's FileDiff React component
+  // through a portal from the surface's React tree. Anything missing leaves t3diff null and the plain view is used.
+  let t3diffPromise = null;
+  function loadT3Diff() {
+    t3diffPromise ??= (async () => {
+      try {
+        const names = await (await fetch("/__t3mod/chunks.json", { cache: "no-store" })).json();
+        const find = (re) => names.find((n) => re.test(n));
+        const [fd, dr, rd] = await Promise.all([find(/^FileDiff-/), find(/^diffRendering-/), find(/^react-dom-/)].map((n) => import(`/assets/${n}`)));
+        const FileDiff = fd.__t3mod_FileDiff;
+        const parse = dr.__t3mod_parseDiffFromFile;
+        const themeName = dr.__t3mod_themeName;
+        const dom = (rd.t ?? Object.values(rd)[0])?.();
+        if (typeof FileDiff !== "function" || typeof parse !== "function" || typeof dom?.createPortal !== "function") throw new Error("exports missing");
+        return { FileDiff, parse, themeName, createPortal: dom.createPortal };
+      } catch (e) {
+        console.debug("[t3mod] commit-graph: T3 diff renderer unavailable, using the plain diff", e);
+        return null;
+      }
+    })();
+    return t3diffPromise;
+  }
+
+  let portalIds = 0;
+
   function Surface(props) {
     const R = props.React;
     const ref = R.useRef(null);
     const view = R.useRef(null);
+    const [portals, setPortals] = R.useState([]);
     R.useLayoutEffect(() => {
       view.current = new GraphView(ref.current);
+      view.current.react = { setPortals, jsx: props.jsx };
       return () => {
         view.current?.destroy();
         view.current = null;
@@ -1542,7 +1617,7 @@ if (!NS.commitGraph) {
     R.useEffect(() => {
       view.current?.setProps({ cwd: props.workspaceRoot, visible: props.visible, threadRef: props.threadRef });
     });
-    return props.jsx("div", { ref, className: "t3cg-host", "data-t3mod": "commit-graph" });
+    return props.jsx("div", { ref, className: "t3cg-host", "data-t3mod": "commit-graph", children: portals.map((p) => p.render()) });
   }
 
   NS.commitGraph = { Surface, Icon, menuItems, bindOpener, _layout: layout, _GraphView: GraphView, _dialog: dialog };

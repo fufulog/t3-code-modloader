@@ -142,6 +142,17 @@ try {
     const ctxLines = sh(["show", "HEAD:a.txt"]).split("\n").length;
     eq(full.diff.split("\n").filter((l) => l.startsWith(" ") || l.startsWith("-") || l.startsWith("+")).length >= ctxLines - 1, true, "full diff covers every line");
     await rejects(op("fileDiff", { hash: "*", path: "../x", full: true }), /invalid path/);
+    // Both sides of a file for T3's own diff renderer
+    const sides = await op("fileSides", { hash: "*", path: "a.txt" });
+    eq(sides.before, sh(["show", "HEAD:a.txt"]) + "\n", "sides: committed text before");
+    eq(sides.after, "changed\n", "sides: working tree after");
+    const added = await op("fileSides", { hash: "*", path: "new.txt" });
+    eq(added.before, null, "sides: untracked file has no before");
+    eq(added.after, "untracked\n", "sides: untracked after");
+    writeFileSync(join(cwd, "bin.dat"), Buffer.from([1, 0, 2]));
+    eq((await op("fileSides", { hash: "*", path: "bin.dat" })).unavailable, true, "sides: binary is unavailable");
+    rmSync(join(cwd, "bin.dat"));
+    await rejects(op("fileSides", { hash: "*", path: "../x" }), /invalid path/);
     await op("stashPush", { message: "wip", includeUntracked: true });
     eq((await op("info")).uncommitted, 0, "clean after stash");
     await op("stashApply", { selector: "stash@{0}" });

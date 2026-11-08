@@ -108,7 +108,17 @@ function patchChunk(pathname, source, mods, verdicts) {
     const targets = (mod.patches ?? []).filter((p) => p.file.test(base));
     if (!targets.length) continue;
     let next = text;
-    for (const p of targets) next = p.apply(next);
+    for (const p of targets) {
+      // optional patches add extras (a mod must work without them): a miss skips the patch
+      if (!p.optional) next = p.apply(next);
+      else {
+        try {
+          next = p.apply(next);
+        } catch (e) {
+          log(`optional patch ${mod.name}/${p.id} skipped: ${e.message}`);
+        }
+      }
+    }
     text = next;
     applied.push(mod.name);
   }
@@ -125,19 +135,22 @@ function verifyMods(assetDir, mods) {
   const verdicts = {};
   for (const mod of mods) {
     const problems = [];
+    const optionalMisses = [];
     for (const p of mod.patches ?? []) {
+      const miss = p.optional ? optionalMisses : problems;
       const hits = files.filter((f) => p.file.test(f));
       if (hits.length !== 1) {
-        problems.push(`${p.id}: expected 1 chunk matching ${p.file}, found ${hits.length}`);
+        miss.push(`${p.id}: expected 1 chunk matching ${p.file}, found ${hits.length}`);
         continue;
       }
       try {
         p.apply(fs.readFileSync(path.join(assets, hits[0]), "utf8"));
       } catch (e) {
-        problems.push(`${p.id}: ${e.message}`);
+        miss.push(`${p.id}: ${e.message}`);
       }
     }
-    verdicts[mod.name] = { ok: problems.length === 0, problems };
+    if (optionalMisses.length) log(`mod ${mod.name}: optional patches unavailable: ${optionalMisses.join("; ")}`);
+    verdicts[mod.name] = { ok: problems.length === 0, problems, ...(optionalMisses.length ? { optionalMisses } : {}) };
     log(`mod ${mod.name}: ${problems.length ? "DISABLED " + problems.join("; ") : "ok"}`);
   }
   return verdicts;
@@ -174,6 +187,14 @@ function serveModAsset(pathname, mods) {
   if (rest === "status.json") {
     const s = state();
     return new Response(JSON.stringify({ mods: s.status, log: s.log.slice(-30) }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  }
+  if (rest === "chunks.json") {
+    // T3's own chunk file names (hashed), so a mod can import() the same module instance T3 uses
+    let files = [];
+    try {
+      files = fs.readdirSync(path.join(state().assetDir, "assets")).filter((f) => f.endsWith(".js"));
+    } catch {}
+    return new Response(JSON.stringify(files), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
   }
   const [modName, ...fileParts] = rest.split("/");
   const mod = mods.find((m) => m.name === modName);
@@ -253,7 +274,9 @@ function assetDirFor(electron) {
 
 function refreshMods(electron, opts) {
   const { mods, found, core } = loadMods(opts);
-  const status = verifyMods(assetDirFor(electron), mods);
+  const assetDir = assetDirFor(electron);
+  const status = verifyMods(assetDir, mods);
+  state().assetDir = assetDir;
   for (const entry of [core, ...found]) {
     if (!entry.usable && entry.enabled) status[entry.id] = { ok: false, problems: entry.problems };
   }

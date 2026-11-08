@@ -165,4 +165,22 @@ test("config: first run enables everything found; later arrivals start Available
 });
 
 rmSync(tmp, { recursive: true, force: true });
+test("optional patches: a miss never disables the mod, a required miss does", () => {
+  const { _internals } = require("../src/main/loader.cjs");
+  const dir = join(tmp, "client");
+  put(join(dir, "assets", "a-1.js"), "const a=1;");
+  const must = { id: "must", file: /^a-/, apply: (src) => src + "//must" };
+  const extra = (apply) => ({ id: "extra", optional: true, file: /^a-/, apply });
+  const missing = { id: "gone", optional: true, file: /^nope-/, apply: (src) => src };
+  const boom = extra(() => {
+    throw new Error("anchor moved");
+  });
+  const verdicts = _internals.verifyMods(dir, [{ name: "m1", patches: [must, boom, missing] }, { name: "m2", patches: [{ ...must, file: /^nope-/ }] }]);
+  assert.equal(verdicts.m1.ok, true);
+  assert.equal(verdicts.m1.optionalMisses.length, 2);
+  assert.equal(verdicts.m2.ok, false);
+  const out = _internals.patchChunk("/assets/a-1.js", "const a=1;", [{ name: "m1", patches: [must, boom, extra((src) => src + "//extra")] }], verdicts);
+  assert.equal(out.text, "const a=1;//must//extra");
+});
+
 console.log(`\n${n} tests passed`);
