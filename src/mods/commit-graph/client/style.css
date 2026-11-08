@@ -11,7 +11,8 @@
   overflow: hidden;
 }
 
-.t3cg {
+/* Theme tokens, also on the hover card, which lives on <body> outside the panel. */
+.t3cg, .t3cg-card {
   --t3cg-fg: var(--foreground);
   --t3cg-muted: var(--muted-foreground);
   --t3cg-border: var(--border);
@@ -23,6 +24,8 @@
   --t3cg-del: #f85149;
   --t3cg-mod: #d29922;
   --t3cg-ren: #58a6ff;
+}
+.t3cg {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -228,11 +231,12 @@
 
 /* ---- hover card ---- */
 .t3cg-card {
-  position: absolute;
-  z-index: 30;
+  position: fixed;
+  z-index: 60;
   width: 420px;
-  max-width: calc(100% - 16px);
-  max-height: 320px;
+  max-width: calc(100vw - 16px);
+  max-height: min(420px, calc(100vh - 16px));
+  box-sizing: border-box;
   overflow: auto;
   padding: 12px 14px;
   border: 1px solid var(--t3cg-border);

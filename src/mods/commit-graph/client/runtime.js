@@ -368,13 +368,18 @@ if (!NS.commitGraph) {
       this.tbody = this.$("tbody");
       this.scroller = this.$(".t3cg-scroll");
       this.$("[data-act=remotes]").checked = this.prefs.showRemote !== false;
-      // Hover card: one element reused for every commit.
+      // Hover card: one element reused for every commit. It lives on <body> so it can sit
+      // outside the panel, to the left of the hovered row (the mirror of VS Code's Git Graph).
       this.card = document.createElement("div");
       this.card.className = "t3cg-card";
       this.card.hidden = true;
-      this.root.appendChild(this.card);
+      document.body.appendChild(this.card);
       this.card.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
       this.card.addEventListener("mouseleave", () => this.scheduleHide());
+      this.card.addEventListener("click", (e) => {
+        const copyEl = e.target.closest("[data-copy]");
+        if (copyEl) copy(copyEl.dataset.copy);
+      });
       this.cardI = null;
       this.hoverTimer = null;
       this.hideTimer = null;
@@ -390,6 +395,7 @@ if (!NS.commitGraph) {
       clearTimeout(this.hoverTimer);
       clearTimeout(this.hideTimer);
       window.removeEventListener("focus", this.onFocus);
+      this.card.remove();
       this.host.innerHTML = "";
     }
 
@@ -630,19 +636,25 @@ if (!NS.commitGraph) {
         ${stats}
         ${refs ? `<div class="t3cg-card-refs">${refs}</div>` : ""}
         <div class="t3cg-card-foot"><span class="t3cg-mono">${esc(short(row.hash))}</span> <a class="t3cg-copy" data-copy="${esc(row.hash)}" title="Copy full hash">copy</a></div>`;
-      // Place below the row; flip above if it would run off the bottom of the panel.
+      // Place it left of the panel, top-aligned with the row and kept on screen. The panel is
+      // on the right of the window, so this mirrors VS Code, where the card opens to the right.
       card.hidden = false;
       const rootRect = this.root.getBoundingClientRect();
       const rowRect = tr.getBoundingClientRect();
       const cw = card.offsetWidth;
       const ch = card.offsetHeight;
-      const left = Math.min(Math.max(8, rowRect.left - rootRect.left + 40), rootRect.width - cw - 8);
-      let top = rowRect.bottom - rootRect.top + 4;
-      if (top + ch > rootRect.height - 8) top = Math.max(8, rowRect.top - rootRect.top - ch - 4);
+      const clampTop = (t) => Math.min(Math.max(8, t), window.innerHeight - ch - 8);
+      let left = rootRect.left - cw - 8;
+      let top = clampTop(rowRect.top);
+      if (left < 8) {
+        // No room beside the panel (narrow window): fall back to below the row, or above it.
+        left = Math.min(Math.max(rootRect.left + 8, rowRect.left + 40), rootRect.right - cw - 8);
+        top = rowRect.bottom + 4 + ch > window.innerHeight - 8 ? clampTop(rowRect.top - ch - 4) : rowRect.bottom + 4;
+      }
       card.style.left = `${left}px`;
       card.style.top = `${top}px`;
-      // A card lying over the open file list lets the pointer through to it, so moving onto
-      // the list closes the card instead of keeping it open.
+      // In the fallback the card can lie over the open file list: let the pointer through
+      // to it, so moving onto the list closes the card instead of keeping it open.
       const list = this.tbody.querySelector(".t3cg-details")?.getBoundingClientRect();
       const cr = card.getBoundingClientRect();
       card.classList.toggle("t3cg-card-passthru", !!list && cr.left < list.right && cr.right > list.left && cr.top < list.bottom && cr.bottom > list.top);
