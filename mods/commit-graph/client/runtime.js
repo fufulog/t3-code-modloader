@@ -1502,6 +1502,7 @@ if (!NS.commitGraph) {
     const out = [];
     let oldN = 0;
     let newN = 0;
+    // One number column: the new line number, or the old one (dimmed by CSS) on removed lines.
     let inHunk = false;
     for (const line of text.split("\n")) {
       if (line.startsWith("@@")) {
@@ -1511,18 +1512,18 @@ if (!NS.commitGraph) {
           newN = Number(m[2]);
         }
         inHunk = true;
-        if (!full) out.push(`<tr class="t3cg-d-hunk"><td></td><td></td><td>${esc(line)}</td></tr>`);
+        if (!full) out.push(`<tr class="t3cg-d-hunk"><td></td><td>${esc(line)}</td></tr>`);
         continue;
       }
       if (!inHunk) {
-        if (/^Binary files/.test(line)) out.push(`<tr class="t3cg-d-meta"><td></td><td></td><td>${esc(line)}</td></tr>`);
+        if (/^Binary files/.test(line)) out.push(`<tr class="t3cg-d-meta"><td></td><td>${esc(line)}</td></tr>`);
         continue;
       }
-      if (line.startsWith("+")) out.push(`<tr class="t3cg-d-add"><td></td><td>${newN++}</td><td>${esc(line)}</td></tr>`);
-      else if (line.startsWith("-")) out.push(`<tr class="t3cg-d-del"><td>${oldN++}</td><td></td><td>${esc(line)}</td></tr>`);
-      else if (line.startsWith("\\")) out.push(`<tr class="t3cg-d-meta"><td></td><td></td><td>${esc(line)}</td></tr>`);
+      if (line.startsWith("+")) out.push(`<tr class="t3cg-d-add"><td>${newN++}</td><td>${esc(line)}</td></tr>`);
+      else if (line.startsWith("-")) out.push(`<tr class="t3cg-d-del"><td>${oldN++}</td><td>${esc(line)}</td></tr>`);
+      else if (line.startsWith("\\")) out.push(`<tr class="t3cg-d-meta"><td></td><td>${esc(line)}</td></tr>`);
       else if (line.startsWith("diff --git")) inHunk = false;
-      else if (line !== "" || inHunk) out.push(`<tr><td>${oldN++}</td><td>${newN++}</td><td>${esc(line)}</td></tr>`);
+      else if (line !== "" || inHunk) out.push(`<tr><td>${(oldN++, newN++)}</td><td>${esc(line)}</td></tr>`);
     }
     return `<table class="t3cg-diff">${out.join("")}</table>`;
   }
