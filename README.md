@@ -156,6 +156,10 @@ node bin/t3mod-pack.mjs mods/my-mod            # writes mods/my-mod.zip
 
 Mods are a folder or a zip, never both under one id; the first one found wins and the other is reported as a duplicate in the modal.
 
+## Skills
+
+`skills/t3-create-mod` walks an agent through making a mod; `skills/t3-mod-styleguide` holds the UI rules it points to. Copy or symlink them into `~/.claude/skills/` (or a project's `.claude/skills/`) to use them.
+
 ## Tests
 
 ```sh
