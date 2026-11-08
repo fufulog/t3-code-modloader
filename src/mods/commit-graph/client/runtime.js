@@ -851,7 +851,9 @@ if (!NS.commitGraph) {
 
     // ---- branch filter dropdown
     openBranchDropdown(btn) {
+      const open = this.root.querySelector(".t3cg-dd:not(.t3cg-menu)");
       this.root.querySelector(".t3cg-dd")?.remove();
+      if (open) return; // second click on the button closes it
       const { refs } = this.data ?? { refs: { heads: [], remotes: [] } };
       const rp = this.repoPrefs();
       const selected = new Set(rp.branches ?? []);
