@@ -1,7 +1,7 @@
 // asar patching, the bootstrap block, and install/uninstall against a synthetic T3
 // install (no real T3 is touched; state goes to temp dirs).
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, statSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -131,6 +131,16 @@ test("a failed install is rolled back", () => {
   assert.ok(readFileSync(asarFile).equals(original));
   assert.equal(readFileSync(asarFile + ".t3mod-backup", "utf8"), "occupied");
   assert.equal(existsSync(asarFile + ".t3mod-new"), false);
+});
+
+test("rewrite replaces a read-only file (desktop entries are 0444) and keeps its mode", () => {
+  const f = join(tmp, "entry.desktop");
+  writeFileSync(f, "Exec=old\n");
+  chmodSync(f, 0o444);
+  inst.rewrite(f, "Exec=new\n");
+  assert.equal(readFileSync(f, "utf8"), "Exec=new\n");
+  assert.equal(statSync(f).mode & 0o777, 0o444);
+  assert.equal(existsSync(f + ".t3mod-tmp"), false);
 });
 
 rmSync(tmp, { recursive: true, force: true });

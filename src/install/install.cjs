@@ -188,6 +188,15 @@ function desktopEntries() {
   }
 }
 
+/** Rewrite a file by renaming a new one over it, so a read-only file (0444 desktop entries exist) still works. Keeps its mode. */
+function rewrite(file, text) {
+  const mode = fs.statSync(file).mode & 0o7777;
+  const tmp = `${file}.t3mod-tmp`;
+  fs.writeFileSync(tmp, text, { mode });
+  fs.chmodSync(tmp, mode);
+  fs.renameSync(tmp, file);
+}
+
 /** Replace the program in every `Exec=` line, keeping its arguments (%U etc.). */
 function retarget(text, program) {
   return text.replace(/^(Exec=)("[^"]*"|\S+)(.*)$/gm, (_m, k, _prog, rest) => `${k}"${program}"${rest}`);
@@ -237,22 +246,27 @@ function install(target, { force = false, log = () => {} } = {}) {
       fs.writeFileSync(launcherFile(), launcherScript(process.execPath), { mode: 0o755 });
       save({ type: "launcher", file: launcherFile() });
       log(`launcher ${launcherFile()}`);
-      // an older t3mod install pointed ~/.local/bin/t3code-appimage at the inspector launcher; put the original back
-      const wrapper = path.join(require("node:os").homedir(), ".local", "bin", "t3code-appimage");
-      const old = wrapper + ".t3mod-backup";
-      if (fs.existsSync(old) && fs.existsSync(wrapper) && /t3mod/.test(fs.readFileSync(wrapper, "utf8"))) {
-        fs.renameSync(old, wrapper);
-        log(`restored the original ${wrapper} (replaced an older t3mod launcher)`);
-      }
       fs.mkdirSync(backupDir(), { recursive: true });
       for (const entry of desktopEntries()) {
         const text = fs.readFileSync(entry, "utf8");
         if (text.includes(launcherFile())) continue;
         const backup = path.join(backupDir(), path.basename(entry));
         fs.writeFileSync(backup, text);
-        fs.writeFileSync(entry, retarget(text, launcherFile()));
+        rewrite(entry, retarget(text, launcherFile()));
         save({ type: "desktop", file: entry, backup, wrote: launcherFile() });
         log(`desktop entry ${entry} now starts the launcher`);
+      }
+      // an older t3mod install pointed ~/.local/bin/t3code-appimage at the inspector launcher; put the original back
+      // (last, so a failed install leaves it alone; uninstall puts the older launcher back exactly as it was)
+      const wrapper = path.join(require("node:os").homedir(), ".local", "bin", "t3code-appimage");
+      const old = wrapper + ".t3mod-backup";
+      if (fs.existsSync(old) && fs.existsSync(wrapper) && /t3mod/.test(fs.readFileSync(wrapper, "utf8"))) {
+        const keep = path.join(backupDir(), "t3code-appimage.legacy");
+        fs.copyFileSync(wrapper, keep);
+        fs.copyFileSync(old, keep + ".original");
+        save({ type: "wrapper", file: wrapper, backup: keep, original: keep + ".original", sidecar: old });
+        fs.renameSync(old, wrapper);
+        log(`restored the original ${wrapper} (replaced an older t3mod launcher)`);
       }
       pruneTrees([treeFor(target.file)]);
     } else {
@@ -311,10 +325,20 @@ function uninstall({ log = () => {}, keepConfig = false } = {}) {
         step("Removed the launcher");
       } else if (c.type === "desktop") {
         if (fs.existsSync(c.file) && fs.readFileSync(c.file, "utf8").includes(c.wrote)) {
-          fs.writeFileSync(c.file, fs.readFileSync(c.backup, "utf8"));
+          rewrite(c.file, fs.readFileSync(c.backup, "utf8"));
           step(`Restored the desktop entry ${path.basename(c.file)}`);
         } else {
           step(`Desktop entry ${path.basename(c.file)} no longer starts the launcher; left as it is`);
+        }
+      } else if (c.type === "wrapper") {
+        if (fs.existsSync(c.file) && /t3mod/.test(fs.readFileSync(c.file, "utf8"))) {
+          step(`${path.basename(c.file)} is still the older launcher`);
+        } else if (fs.existsSync(c.backup)) {
+          fs.copyFileSync(c.file, c.sidecar); // the original becomes the sidecar again
+          fs.copyFileSync(c.backup, c.file); // and the older t3mod launcher comes back
+          step(`Put the older launcher ${path.basename(c.file)} back`);
+        } else {
+          step(`No saved copy of ${path.basename(c.file)}; left as it is`);
         }
       } else if (c.type === "tree") {
         if (inUse(c.root)) {
@@ -350,4 +374,4 @@ function status() {
   return { installed: true, installedAt: m.installedAt, target: m.target, repo: m.repo, changes: checks };
 }
 
-module.exports = { install, uninstall, status, prepareTree, pruneTrees, readFuses, inject, strip, isPatched, readManifest, manifestFile, launcherFile, treeFor, BEGIN, END };
+module.exports = { install, uninstall, status, prepareTree, pruneTrees, readFuses, rewrite, inject, strip, isPatched, readManifest, manifestFile, launcherFile, treeFor, BEGIN, END };
