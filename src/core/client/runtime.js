@@ -93,6 +93,7 @@ if (!NS.core) {
   const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
   const CLOSE = svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
   const REFRESH = svg('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>');
+  const LOCK = svg('<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>');
   const FOLDER = svg('<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>');
   let styleLoaded = false;
   const ensureStyle = () => {
@@ -111,7 +112,7 @@ if (!NS.core) {
     if (modal) return modal.focus();
     ensureStyle();
     const lastFocus = document.activeElement;
-    const st = { data: null, selected: null, busy: null, error: null };
+    const st = { data: null, selected: null, busy: null, error: null, confirm: false, steps: null };
 
     const root = document.createElement("div");
     root.className = "t3m-backdrop";
@@ -155,6 +156,7 @@ if (!NS.core) {
       return `<button class="t3m-item${st.selected === m.id ? " t3m-sel" : ""}${bad ? " t3m-bad" : ""}" data-id="${esc(m.id)}">
         <span class="t3m-name">${esc(m.name)}</span>
         ${m.version ? `<span class="t3m-ver">${esc(m.version)}</span>` : ""}
+        ${m.builtin ? `<span class="t3m-tag">${LOCK} built in</span>` : ""}
         ${m.kind === "zip" ? '<span class="t3m-tag">zip</span>' : ""}
         ${bad ? '<span class="t3m-tag t3m-tag-bad">not active</span>' : ""}
         ${m.description ? `<span class="t3m-desc">${esc(m.description)}</span>` : ""}
@@ -175,17 +177,36 @@ if (!NS.core) {
 
       const sel = mods.find((m) => m.id === st.selected);
       const pv = $("[data-preview]");
-      if (!sel) {
+      if (st.steps) {
+        pv.innerHTML = `<div class="t3m-pv-head"><div class="t3m-pv-title"><strong>Removing the modloader</strong></div></div>
+          <ul class="t3m-steps">${st.steps.map((x) => `<li class="${x.ok ? "t3m-ok" : "t3m-fail"}">${x.ok ? "✓" : "✗"} ${esc(x.label)}${x.detail ? `<span class="t3m-meta"> ${esc(x.detail)}</span>` : ""}</li>`).join("")}</ul>
+          <p class="t3m-muted">Your mod files were not touched. T3 reloads in a moment; restart it afterwards to run unmodified.</p>`;
+      } else if (st.confirm && sel?.builtin) {
+        const loaded = mods.filter((m) => m.enabled && !m.builtin);
+        const inst = st.data.install;
+        pv.innerHTML = `<div class="t3m-pv-head"><div class="t3m-pv-title"><strong>Remove the modloader?</strong></div></div>
+          <p>This runs in order:</p>
+          <ol class="t3m-plan">
+            <li>Unload ${loaded.length ? loaded.map((m) => `<strong>${esc(m.name)}</strong>`).join(", ") : "the loaded mods (none are loaded)"}</li>
+            <li>Remove this window and the Mods button</li>
+            <li>${inst?.installed ? "Restore T3 to its original files (undo what the installer changed)" : "Restore T3's files (nothing to restore: it was not set up by the installer)"}</li>
+          </ol>
+          <p class="t3m-muted">Your mod files stay in the mods folder. Restart T3 afterwards.</p>
+          <div class="t3m-actions"><button class="t3m-btn" data-act="cancel">Cancel</button><button class="t3m-btn t3m-danger-solid" data-act="remove" ${st.busy ? "disabled" : ""}>${st.busy ? "Removing…" : "Remove modloader"}</button></div>`;
+      } else if (!sel) {
         pv.innerHTML = `<div class="t3m-empty t3m-pad">${st.data ? "Select a mod to preview it." : "Loading…"}</div>`;
       } else {
         const bad = sel.enabled && sel.ok === false;
-        const meta = [sel.version && `v${esc(sel.version)}`, sel.author && esc(sel.author), sel.kind === "zip" ? "zip" : "folder", esc(sel.file)].filter(Boolean).join(" · ");
+        const meta = [sel.version && `v${esc(sel.version)}`, sel.author && esc(sel.author), sel.builtin ? "built in" : sel.kind === "zip" ? "zip" : "folder", !sel.builtin && esc(sel.file)].filter(Boolean).join(" · ");
         const problems = sel.problems.length ? `<div class="t3m-problems">${sel.problems.map((p) => `<div>${esc(p)}</div>`).join("")}</div>` : "";
         const label = st.busy ? (sel.enabled ? "Unloading…" : "Loading…") : sel.enabled ? "Unload" : "Load";
+        const action = sel.builtin
+          ? `<button class="t3m-btn t3m-danger" data-act="confirm-remove">Remove modloader…</button>`
+          : `<button class="t3m-btn ${sel.enabled ? "" : "t3m-primary"}" data-act="toggle" data-id="${esc(sel.id)}" ${st.busy ? "disabled" : ""}>${label}</button>`;
         pv.innerHTML = `
           <div class="t3m-pv-head">
             <div class="t3m-pv-title"><strong>${esc(sel.name)}</strong><span class="t3m-meta">${meta}</span></div>
-            <button class="t3m-btn ${sel.enabled ? "" : "t3m-primary"}" data-act="toggle" data-id="${esc(sel.id)}" ${st.busy ? "disabled" : ""}>${label}</button>
+            ${action}
           </div>
           ${bad ? '<div class="t3m-warn">Loaded, but not active: it does not match this version of T3.</div>' : ""}
           ${problems}
@@ -214,6 +235,30 @@ if (!NS.core) {
       if (act === "close") return close();
       if (act === "folder") return void ops("openFolder").catch((err) => ((st.error = err.message), render()));
       if (act === "rescan") return void call("rescan");
+      if (act === "confirm-remove") {
+        st.confirm = true;
+        return render();
+      }
+      if (act === "cancel") {
+        st.confirm = false;
+        return render();
+      }
+      if (act === "remove") {
+        st.busy = "remove";
+        render();
+        return void ops("remove").then(
+          (r) => {
+            st.steps = r.steps;
+            st.busy = null;
+            render();
+          },
+          (err) => {
+            st.error = err.message;
+            st.busy = null;
+            render();
+          },
+        );
+      }
       if (act === "toggle") {
         const mod = st.data?.mods.find((m) => m.id === e.target.closest("[data-id]").dataset.id);
         if (!mod || st.busy) return;
@@ -224,6 +269,7 @@ if (!NS.core) {
       const id = e.target.closest(".t3m-item")?.dataset.id;
       if (id) {
         st.selected = id;
+        st.confirm = false;
         render();
       }
     });

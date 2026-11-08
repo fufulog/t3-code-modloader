@@ -16,8 +16,8 @@
 
 const path = require("node:path");
 const fs = require("node:fs");
-const os = require("node:os");
 const modsLib = require("./mods.cjs");
+const paths = require("./paths.cjs");
 
 const ROOT = path.resolve(__dirname, "../..");
 const STATE_KEY = "__t3modMain";
@@ -46,7 +46,7 @@ function log(...parts) {
 
 /** Where mods live: <repo>/mods, or $T3MOD_MODS_DIR. Folders and .zip/.t3mod files both work. */
 const modsDir = () => process.env.T3MOD_MODS_DIR || path.join(ROOT, "mods");
-const configFile = () => process.env.T3MOD_CONFIG || path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "t3-modloader", "config.json");
+const configFile = () => process.env.T3MOD_CONFIG || path.join(paths.configDir(), "config.json");
 
 /**
  * Which mods run is the user's choice, kept in config.json as { enabled: [id...] }.
@@ -191,6 +191,7 @@ function serveModAsset(pathname, mods) {
 
 function makeWrapped(inner, getMods) {
   return async (request) => {
+    if (state().removed) return inner(request); // "Remove modloader" ran: serve T3 untouched
     let url;
     try {
       url = new URL(request.url);
@@ -259,7 +260,8 @@ function refreshMods(electron, opts) {
   const s = state();
   s.status = status;
   s.mods = mods;
-  s.catalog = found.map((m) => ({
+  s.catalog = [core, ...found].map((m) => ({
+    builtin: m === core,
     id: m.id,
     name: m.name,
     version: m.version,
@@ -325,7 +327,11 @@ function setupMain(electron) {
 
 /** What the built-in Mods modal may ask of the loader (reached over IPC by src/core). */
 function loaderApi(electron) {
-  const view = () => ({ modsDir: modsDir(), mods: state().catalog });
+  const installer = () => require("../install/install.cjs");
+  const view = () => {
+    const inst = installer().status();
+    return { modsDir: modsDir(), mods: state().catalog, install: { installed: inst.installed, target: inst.target ?? null } };
+  };
   return {
     list: view,
     rescan() {
@@ -336,7 +342,8 @@ function loaderApi(electron) {
     setEnabled(id, on) {
       const entry = state().catalog.find((m) => m.id === id);
       if (!entry) throw new Error(`no such mod: ${id}`);
-      const enabled = new Set(state().catalog.filter((m) => m.enabled).map((m) => m.id));
+      if (entry.builtin) throw new Error("the modloader's own UI cannot be unloaded; use Remove modloader");
+      const enabled = new Set(state().catalog.filter((m) => m.enabled && !m.builtin).map((m) => m.id));
       on ? enabled.add(id) : enabled.delete(id);
       writeEnabled(enabled);
       refreshMods(electron);
@@ -349,6 +356,35 @@ function loaderApi(electron) {
     openFolder() {
       fs.mkdirSync(modsDir(), { recursive: true });
       return electron.shell.openPath(modsDir());
+    },
+    /**
+     * Take the modloader out, in order: every mod, then the Mods UI, then what the
+     * installer put into T3 (see src/install). The window reloads afterwards, unmodified.
+     */
+    removeModloader() {
+      const steps = [];
+      const step = (label, ok = true, detail) => steps.push({ label, ok, ...(detail ? { detail } : {}) });
+      const s = state();
+      const loaded = s.catalog.filter((m) => m.enabled && !m.builtin);
+      writeEnabled(new Set());
+      for (const m of loaded) {
+        releaseIpc(electron.ipcMain, m.id);
+        step(`Unloaded ${m.name}`);
+      }
+      if (!loaded.length) step("No mods were loaded");
+      s.removed = true;
+      s.mods = [];
+      s.status = {};
+      for (const name of Object.keys(s.owned)) releaseIpc(electron.ipcMain, name);
+      step("Removed the Mods window and button");
+      try {
+        steps.push(...installer().uninstall({ log: (m) => log(m) }));
+      } catch (e) {
+        step("Could not restore T3's files", false, e.message);
+      }
+      log("modloader removed");
+      setTimeout(() => reloadWindows(electron), 3000);
+      return { steps };
     },
   };
 }
@@ -439,7 +475,7 @@ function relaunchThroughLauncher(launcher) {
   const cp = require("node:child_process");
   const orig = cp.spawn;
   cp.spawn = function (file, args, opts) {
-    if (typeof file === "string" && /\.AppImage$/.test(file) && !(opts?.env ?? process.env).APPIMAGE_EXIT_AFTER_INSTALL) {
+    if (typeof file === "string" && /\.AppImage$/.test(file) && !(opts?.env ?? process.env).APPIMAGE_EXIT_AFTER_INSTALL && !state().removed && fs.existsSync(launcher)) {
       log(`relaunching ${file} through launcher`);
       return orig.call(this, launcher, ["--appimage", file, ...(Array.isArray(args) ? args : [])], Array.isArray(args) ? opts : args);
     }
@@ -455,6 +491,7 @@ async function live({ reload = true } = {}) {
   const electron = require("electron");
   const { protocol, net } = electron;
   const s = state();
+  s.removed = false;
   refreshMods(electron);
 
   if (!s.handlerInstalled) {

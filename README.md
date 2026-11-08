@@ -54,7 +54,31 @@ How it works:
 
 Before sending the signal, it checks that the process catches SIGUSR1, so the signal can never terminate T3. Run it again after editing a mod; module caches are cleared first.
 
-### Start T3 with mods (cold)
+### Install into T3 (permanent, reversible)
+
+```sh
+node bin/t3mod-install.mjs            # find T3, patch it, add the launcher
+node bin/t3mod-install.mjs status     # what is installed
+node bin/t3mod-install.mjs find       # list the T3 installs it can see
+node bin/t3mod-install.mjs uninstall  # undo everything, newest change first
+```
+
+Flags: `--dir PATH` (a T3 folder or `.AppImage`, skips the search and the prompt), `--yes`, `--force`, `--keep-config`.
+
+The installer looks in `PATH`, the T3 updater's download folder, `~/Applications`, `~/Downloads`, `~/.local/bin`, `/opt`, `/usr/lib`, `/usr/share`, macOS `.app` bundles and the Windows `Programs` folders. If nothing is found it asks for the folder. It reads the entry point from T3's `app.asar` and inserts one marked block (`/*t3mod:begin*/…/*t3mod:end*/`) that calls the loader.
+
+- **Unpacked installs** (folder with `resources/app.asar`): `app.asar` is patched in place and the original is kept as `app.asar.t3mod-backup`.
+- **AppImage**: the AppImage itself is never modified. A patched copy is extracted into the data dir (about 600 MB), a `t3code-modded` launcher is written, and desktop entries that ran the AppImage are pointed at it. A new T3 version is re-extracted on its first start.
+- Builds with Electron's `EmbeddedAsarIntegrityValidation` fuse on are refused unless `--force`.
+- Everything it changes is recorded in `install.json` in the config dir (`~/.config/t3-modloader` on Linux). Uninstall restores desktop entries and the asar byte for byte.
+
+The modloader itself is the built-in `core` mod: it owns the Mods button and window, is always loaded and has a lock in the list. **Remove modloader…** in the Mods window unloads every mod, then removes the Mods window and button, then runs the uninstall above.
+
+Windows and macOS paths are written but untested.
+
+### Start T3 with mods (legacy inspector launcher)
+
+Kept for machines where patching is not wanted; the installer above replaces it.
 
 ```sh
 bin/install.sh            # rewrites ~/.local/bin/t3code-appimage (the desktop entry's Exec)
@@ -135,7 +159,7 @@ Mods are a folder or a zip, never both under one id; the first one found wins an
 ## Tests
 
 ```sh
-npm test                                    # git ops against a throwaway repo + bare remote, incl. hostile input; then zip/discovery/config tests
+npm test                                    # git ops against a throwaway repo + bare remote, incl. hostile input; then zip/discovery/config tests; then asar patching and install/uninstall against a synthetic T3
 node test/patches.test.mjs <client dir>     # anchors + syntax of patched chunks, against an extracted app.asar
 ```
 
