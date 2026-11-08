@@ -380,10 +380,6 @@ if (!NS.commitGraph) {
           <div class="t3cg-scroll">
             <table class="t3cg-table">
               <colgroup><col data-col="graph"/><col data-col="desc"/></colgroup>
-              <thead><tr>
-                <th data-col="graph">Graph<span class="t3cg-resize" data-col="graph"></span></th>
-                <th data-col="desc">Description</th>
-              </tr></thead>
               <tbody></tbody>
             </table>
             <div class="t3cg-message"></div>
@@ -556,7 +552,8 @@ if (!NS.commitGraph) {
       this.rows = this.buildRows();
       const lay = layout(this.rows);
       this.layout = lay;
-      const graphW = this.prefs.widths.graph ?? Math.min(Math.max(lay.width * LANE_W + 8, 64), 360);
+      // No column header, so no manual resize: the graph column fits its lanes.
+      const graphW = Math.min(Math.max(lay.width * LANE_W + 8, 64), 360);
       this.applyWidths(graphW);
 
       const refMap = this.refsByCommit();
@@ -596,7 +593,6 @@ if (!NS.commitGraph) {
     }
 
     applyWidths(graphW) {
-      const w = this.prefs.widths;
       const cols = this.root.querySelectorAll("col");
       const set = (name, px) => {
         const col = [...cols].find((c) => c.dataset.col === name);
@@ -1392,40 +1388,6 @@ if (!NS.commitGraph) {
           this.render();
         }
       });
-      // column resizing
-      root.addEventListener("mousedown", (e) => {
-        const handle = e.target.closest(".t3cg-resize");
-        if (!handle) return;
-        e.preventDefault();
-        const th = handle.parentElement;
-        const startX = e.clientX;
-        const startW = th.getBoundingClientRect().width;
-        const move = (ev) => {
-          const w = Math.max(40, Math.round(startW + ev.clientX - startX));
-          this.prefs.widths.graph = w;
-          const c = this.root.querySelector(`col[data-col="graph"]`);
-          if (c) c.style.width = `${w}px`;
-        };
-        const up = () => {
-          document.removeEventListener("mousemove", move);
-          document.removeEventListener("mouseup", up);
-          root.classList.remove("t3cg-resizing");
-          savePrefs(this.prefs);
-        };
-        root.classList.add("t3cg-resizing");
-        document.addEventListener("mousemove", move);
-        document.addEventListener("mouseup", up);
-      });
-      root.querySelectorAll("th").forEach((th) =>
-        th.addEventListener("dblclick", () => {
-          const col = th.dataset.col;
-          if (col && this.prefs.widths[col] !== undefined) {
-            delete this.prefs.widths[col];
-            savePrefs(this.prefs);
-            if (this.data) this.render();
-          }
-        }),
-      );
     }
   }
 
