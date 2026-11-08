@@ -361,7 +361,7 @@ if (!NS.commitGraph) {
         <div class="t3cg" tabindex="-1">
           <div class="t3cg-toolbar">
             <div class="t3cg-repo"><span class="t3cg-repo-name"></span></div>
-            <button type="button" class="t3cg-dd-btn" data-act="branches" title="Branches" aria-label="Branches"><span class="t3cg-muted t3cg-dd-ico">${SVG.branch}</span><span class="t3cg-dd-label">Show All</span>${SVG.chevron}</button>
+            <button type="button" class="t3cg-dd-btn" data-act="branches" title="Branches" aria-label="Branches"><span class="t3cg-muted t3cg-dd-ico">${SVG.branch}</span><span class="t3cg-dd-label">All</span>${SVG.chevron}</button>
             <label class="t3cg-check t3cg-toolbar-check"><input type="checkbox" data-act="remotes"/> <span>Show Remote Branches</span></label>
             <div class="t3cg-state"></div>
             <div class="t3cg-spacer"></div>
@@ -547,7 +547,7 @@ if (!NS.commitGraph) {
       this.hideCard(); // rows are about to be replaced, so a card for the old row would point at nothing
       this.$(".t3cg-repo-name").innerHTML = `${esc(info.name)}${info.branch ? ` <span class="t3cg-muted">on</span> ${SVG.branch}<span>${esc(info.branch)}</span>` : ` <span class="t3cg-muted">(detached HEAD)</span>`}`;
       const rp = this.repoPrefs();
-      this.$(".t3cg-dd-label").textContent = rp.branches?.length ? (rp.branches.length === 1 ? rp.branches[0].replace(/^refs\/(heads|remotes)\//, "") : `${rp.branches.length} selected`) : "Show All";
+      this.$(".t3cg-dd-label").textContent = rp.branches?.length ? (rp.branches.length === 1 ? rp.branches[0].replace(/^refs\/(heads|remotes)\//, "") : `${rp.branches.length} selected`) : "All";
       const st = this.$(".t3cg-state");
       st.innerHTML = info.state
         ? `<span class="t3cg-state-pill">${esc(info.state[0].toUpperCase() + info.state.slice(1))}…</span>${info.state !== "merging" ? `<button type="button" class="t3cg-btn t3cg-btn-sm" data-act="continue">Continue</button>` : ""}<button type="button" class="t3cg-btn t3cg-btn-sm" data-act="abort">Abort</button>`
@@ -843,7 +843,7 @@ if (!NS.commitGraph) {
       dd.className = "t3cg-dd";
       dd.innerHTML = `<input type="text" placeholder="Filter branches…" spellcheck="false"/>
         <div class="t3cg-dd-list">
-          <label class="t3cg-dd-opt t3cg-dd-all"><input type="checkbox" data-all ${selected.size ? "" : "checked"}/> <span>Show All</span></label>
+          <label class="t3cg-dd-opt t3cg-dd-all"><input type="checkbox" data-all ${selected.size ? "" : "checked"}/> <span>All</span></label>
           ${opts.map((o) => `<label class="t3cg-dd-opt" data-label="${esc(o.label.toLowerCase())}"><input type="checkbox" data-ref="${esc(o.ref)}" ${selected.has(o.ref) ? "checked" : ""}/> <span>${esc(o.label)}</span></label>`).join("")}
         </div>`;
       const r = btn.getBoundingClientRect();
