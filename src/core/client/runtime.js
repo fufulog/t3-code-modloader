@@ -115,7 +115,7 @@ if (!NS.core) {
     ensureStyle();
     const lastFocus = document.activeElement;
     const st = { data: null, selected: null, busy: null, error: null, confirm: false, steps: null, pending: new Map() };
-    // Load/Unload only stage a change; "Load mods" applies all of them at once (one window reload).
+    // Load/Unload only stage a change; "Confirm" applies all of them at once (one window reload).
     const want = (m) => (st.pending.has(m.id) ? st.pending.get(m.id) : m.enabled);
 
     const root = document.createElement("div");
@@ -134,7 +134,7 @@ if (!NS.core) {
           <section class="t3m-col"><h3>Available <span class="t3m-count" data-count="available"></span></h3><div class="t3m-list" data-list="available"></div></section>
         </div>
         <div class="t3m-preview" data-preview></div>
-        <div class="t3m-foot"><span class="t3m-foot-text" data-foot></span><button class="t3m-btn" data-act="discard" data-pending-only>Discard</button><button class="t3m-btn" data-act="apply" data-pending-only>Load mods</button></div>
+        <div class="t3m-foot"><span class="t3m-foot-text" data-foot></span><button class="t3m-btn" data-act="discard" data-pending-only>Discard</button><button class="t3m-btn" data-act="apply" data-pending-only>Confirm</button></div>
       </div>`;
     const dialog = root.firstElementChild;
     const $ = (sel) => root.querySelector(sel);
@@ -229,10 +229,13 @@ if (!NS.core) {
       const n = st.pending.size;
       for (const b of root.querySelectorAll("[data-pending-only]")) b.hidden = !n;
       const apply = $('[data-act="apply"]');
-      apply.textContent = st.busy === "apply" ? "Loading…" : `Load mods · ${n}`;
+      const adds = [...st.pending.values()].filter(Boolean).length;
+      const drops = n - adds;
+      apply.textContent = st.busy === "apply" ? "Applying…" : ["Confirm", adds && `+${adds}`, drops && `−${drops}`].filter(Boolean).join(" ");
+      apply.title = "Apply the staged changes and reload T3";
       apply.disabled = !!st.busy;
       $('[data-act="discard"]').disabled = !!st.busy;
-      $("[data-foot]").textContent = st.error ? st.error : st.data ? (n ? `${n} change${n > 1 ? "s" : ""} not applied yet. Load mods reloads T3.` : `${st.data.modsDir}`) : "";
+      $("[data-foot]").textContent = st.error ? st.error : st.data ? (n ? `${n} change${n > 1 ? "s" : ""} not applied yet. Confirm reloads T3.` : `${st.data.modsDir}`) : "";
       $("[data-foot]").classList.toggle("t3m-error", !!st.error);
     }
 

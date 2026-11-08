@@ -18,7 +18,7 @@ Needs Node 22 or newer and a T3 Code desktop install (Linux AppImage or unpacked
 
    It looks for T3 itself and asks for its folder or `.AppImage` only if it finds none. `--dir PATH` skips the search; `--yes` skips the confirmation and takes the first T3 found. It shows what it will change and asks before doing it.
 3. Quit T3 and start it again. On an AppImage install, start T3 from its desktop entry (the installer repoints it) or run `~/.local/share/t3-modloader/t3code-modded`. Unpacked installs start as usual, and need the installer run again after a T3 update.
-4. Open **Mods** in the sidebar footer, right after Usage. Mods in this repo's `mods/` folder show up there. The first run loads everything found; mods you add later start under Available, so stage them with the arrows and click **Load mods**.
+4. Open **Mods** in the sidebar footer, right after Usage. Mods in this repo's `mods/` folder show up there. The first run loads everything found; mods you add later start under Available, so stage them with the arrows and click **Confirm**.
 
 Other commands:
 
@@ -134,7 +134,7 @@ mods/                 your mods: one folder or one .zip each
 
 ## The Mods button
 
-A **Mods** button sits in the sidebar footer, right after Usage. It opens a modal with **Loaded** on the left and **Available** on the right. Selecting a mod previews its `mod.md`; The arrow beside a card (or **Load** / **Unload** in the preview) only stages the move; the card jumps to the other column and is tagged "will load" / "will unload". Nothing changes until you click **Load mods** at the bottom, which applies every staged change at once and reloads T3's window once (patches are applied as the client loads). **Discard** drops the staged changes. **Open folder** opens `mods/`; **Rescan** picks up files you just dropped in.
+A **Mods** button sits in the sidebar footer, right after Usage. It opens a modal with **Loaded** on the left and **Available** on the right. Selecting a mod previews its `mod.md`; The arrow beside a card (or **Load** / **Unload** in the preview) only stages the move; the card jumps to the other column and is tagged "will load" / "will unload". Nothing changes until you click **Confirm** at the bottom (it shows the counts, e.g. "Confirm +2 −1"), which applies every staged change at once and reloads T3's window once (patches are applied as the client loads). **Discard** drops the staged changes. **Open folder** opens `mods/`; **Rescan** picks up files you just dropped in.
 
 Which mods run is kept in `~/.config/t3-modloader/config.json` (`{ "enabled": [...] }`, or `$T3MOD_CONFIG`). On the first run everything found is enabled. A mod dropped in later starts out **Available**: mods run with full access in T3's main process, so nothing new runs until you load it.
 

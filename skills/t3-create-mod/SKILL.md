@@ -36,7 +36,7 @@ mods/<id>/
    - `node bin/t3mod-inject.mjs` hot-loads the repo into the running T3 and reloads the window. Never kill or restart T3 to test.
    - Drive the UI through `--eval-only FILE` (main-process script using `webContents.executeJavaScript` and `capturePage`) and look at a screenshot.
    - `node test/patches.test.mjs <client dir>` checks every anchor and the syntax of each patched chunk. Add unit tests for any logic in `main` (see `test/git.test.mjs`); run `npm test`.
-7. Test lifecycle in the Mods window: Rescan, stage Load, Load mods, Unload. A new mod starts under Available by design. Remove any throwaway test mod and restore `~/.config/t3-modloader/config.json` afterwards.
+7. Test lifecycle in the Mods window: Rescan, stage Load, Confirm, Unload. A new mod starts under Available by design. Remove any throwaway test mod and restore `~/.config/t3-modloader/config.json` afterwards.
 8. Package with `node bin/t3mod-pack.mjs mods/<id>` if it should ship as a zip. Commit each verified change (`feat(<id>): ...`); never push unasked.
 
 ## Rules of thumb
