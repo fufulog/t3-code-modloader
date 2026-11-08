@@ -257,7 +257,13 @@ if (!NS.core) {
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "close") return close();
       if (act === "folder") return void ops("openFolder").catch((err) => ((st.error = err.message), render()));
-      if (act === "rescan") return void call("rescan");
+      if (act === "rescan") {
+        // Spin the icon while scanning, for at least one full turn so a fast scan is still visible.
+        const btn = e.target.closest("[data-act]");
+        if (btn.classList.contains("t3m-spinning")) return;
+        btn.classList.add("t3m-spinning");
+        return void Promise.all([call("rescan"), new Promise((r) => setTimeout(r, 800))]).then(() => btn.classList.remove("t3m-spinning"));
+      }
       if (act === "confirm-remove") {
         st.confirm = true;
         return render();

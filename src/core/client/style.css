@@ -70,6 +70,9 @@
 .t3m-iconbtn:hover { background: var(--t3m-hover); color: var(--foreground); }
 .t3m-iconbtn:focus-visible, .t3m-btn:focus-visible, .t3m-item:focus-visible { outline: 2px solid var(--ring, var(--foreground)); outline-offset: -2px; }
 .t3m-iconbtn svg { width: 16px; height: 16px; }
+@keyframes t3m-spin { to { transform: rotate(360deg); } }
+.t3m-spinning svg { animation: t3m-spin 0.8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .t3m-spinning svg { animation-duration: 2s; } }
 
 .t3m-btn {
   height: 32px;
