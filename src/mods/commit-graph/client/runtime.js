@@ -86,6 +86,26 @@ if (!NS.commitGraph) {
   const short = (h) => (h ? h.slice(0, 8) : "");
   // Status letters for the files popdown. Git's "A" is shown as "U" (new).
   const STATUS_LETTER = { A: "U" };
+  // File-type icons: Material Icon Theme (VS Code's look), vendored by bin/vendor-icons.mjs.
+  const ICON_BASE = new URL("./icons/", import.meta.url).href;
+  let iconMap = null;
+  const iconMapReady = fetch(new URL("map.json", ICON_BASE))
+    .then((r) => (r.ok ? r.json() : null))
+    .then((m) => (iconMap = m))
+    .catch(() => null);
+  const isLightTheme = () => !document.documentElement.classList.contains("dark");
+  // VS Code's order: exact file name, then the longest dotted suffix (d.ts before ts), then the default.
+  const fileIcon = (filePath) => {
+    if (!iconMap) return null;
+    const name = filePath.split("/").pop().toLowerCase();
+    const light = isLightTheme() ? iconMap.light : null;
+    let icon = light?.names[name] ?? iconMap.names[name];
+    for (let i = name.indexOf("."); !icon && i !== -1; i = name.indexOf(".", i + 1)) {
+      const ext = name.slice(i + 1);
+      icon = light?.ext[ext] ?? iconMap.ext[ext];
+    }
+    return `${ICON_BASE}${icon ?? iconMap.file}.svg`;
+  };
   const fmtFullDate = (sec) => new Date(sec * 1000).toLocaleString(undefined, { month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   const fmtAgo = (sec) => {
     const s = Math.max(0, Date.now() / 1000 - sec);
@@ -621,6 +641,11 @@ if (!NS.commitGraph) {
       if (top + ch > rootRect.height - 8) top = Math.max(8, rowRect.top - rootRect.top - ch - 4);
       card.style.left = `${left}px`;
       card.style.top = `${top}px`;
+      // A card lying over the open file list lets the pointer through to it, so moving onto
+      // the list closes the card instead of keeping it open.
+      const list = this.tbody.querySelector(".t3cg-details")?.getBoundingClientRect();
+      const cr = card.getBoundingClientRect();
+      card.classList.toggle("t3cg-card-passthru", !!list && cr.left < list.right && cr.right > list.left && cr.top < list.bottom && cr.bottom > list.top);
     }
 
     // ---- files popdown (click a row).
@@ -639,8 +664,7 @@ if (!NS.commitGraph) {
             : "";
         body = `<div class="t3cg-details-files">${parentSel}${this.filesHtml(d)}</div>`;
       }
-      return `<tr class="t3cg-details-row"><td class="t3cg-c-graph">${continuationSvg(g.after, width)}</td><td><div class="t3cg-details">
-        <button type="button" class="t3cg-icon-btn t3cg-details-close" data-act="close-details" title="Close">${SVG.close}</button>${body}</div></td></tr>`;
+      return `<tr class="t3cg-details-row"><td class="t3cg-c-graph">${continuationSvg(g.after, width)}</td><td><div class="t3cg-details">${body}</div></td></tr>`;
     }
 
     filesHtml(d) {
@@ -650,7 +674,9 @@ if (!NS.commitGraph) {
         const name = f.path.split("/").pop();
         const letter = STATUS_LETTER[f.status] ?? f.status;
         const title = f.oldPath && f.oldPath !== f.path ? `${f.oldPath} → ${f.path}` : f.path;
-        return `<div class="t3cg-file-row t3cg-st-${esc(f.status)}" data-file="${i}" title="${esc(title)}"><span class="t3cg-fname">${esc(name)}</span><span class="t3cg-st">${esc(letter)}</span></div>`;
+        const icon = fileIcon(f.path);
+        const img = icon ? `<img class="t3cg-ficon" src="${esc(icon)}" alt="" draggable="false">` : `<span class="t3cg-ficon"></span>`;
+        return `<div class="t3cg-file-row t3cg-st-${esc(f.status)}" data-file="${i}" title="${esc(title)}">${img}<span class="t3cg-fname">${esc(name)}</span><span class="t3cg-st">${esc(letter)}</span></div>`;
       });
       return `<div class="t3cg-file-list">${rows.join("")}</div>`;
     }
@@ -666,6 +692,7 @@ if (!NS.commitGraph) {
       if (!opts.parent) this.render();
       try {
         const details = row.kind === "uncommitted" ? await git("uncommittedDetails", { cwd: this.cwd }) : await git("details", { cwd: this.cwd, hash: row.hash, parent: opts.parent });
+        await iconMapReady;
         if (this.expanded?.key !== key) return;
         this.expanded.details = details;
       } catch (e) {
@@ -686,7 +713,7 @@ if (!NS.commitGraph) {
       overlay.className = "t3cg-diff-overlay";
       overlay.tabIndex = -1;
       const title = `${esc(file.path)}${file.oldPath && file.oldPath !== file.path ? ` <span class="t3cg-muted">(renamed from ${esc(file.oldPath)})</span>` : ""}`;
-      overlay.innerHTML = `<div class="t3cg-diff-head"><span class="t3cg-st-${esc(file.status)} t3cg-st">${esc(file.status)}</span><span class="t3cg-diff-title">${title}</span>
+      overlay.innerHTML = `<div class="t3cg-diff-head"><span class="t3cg-st-${esc(file.status)} t3cg-st">${esc(STATUS_LETTER[file.status] ?? file.status)}</span><span class="t3cg-diff-title">${title}</span>
         <span class="t3cg-muted t3cg-mono">${isUncommitted ? "Uncommitted" : `${esc(short(d.comparedTo ?? ""))}${d.comparedTo ? " ↔ " : ""}${esc(short(d.hash))}`}</span>
         <div class="t3cg-spacer"></div><button type="button" class="t3cg-icon-btn" data-act="close" title="Close (Escape)">${SVG.close}</button></div>
         <div class="t3cg-diff-body"><div class="t3cg-muted" style="padding:12px">Loading diff…</div></div>`;
@@ -1243,10 +1270,6 @@ if (!NS.commitGraph) {
           this.maxCommits += PAGE;
           return this.load();
         }
-        if (act === "close-details") {
-          this.expanded = null;
-          return this.render();
-        }
         if (act === "fetch") {
           if (!this.remotes.length) return dialog(this.root, { message: "This repository has no remotes.", action: null, cancel: "OK" });
           return this.run("Fetch", "fetch", { prune: true });
@@ -1267,6 +1290,8 @@ if (!NS.commitGraph) {
         }
       });
       root.addEventListener("mouseover", (e) => {
+        // Pointer on the open file list: the card is in the way, close it.
+        if (e.target.closest(".t3cg-details")) return this.hideCard();
         const tr = e.target.closest("tr.t3cg-row[data-i]");
         if (tr) this.scheduleCard(tr);
       });
