@@ -18,8 +18,9 @@
   --t3cg-muted: var(--muted-foreground);
   --t3cg-border: var(--border);
   --t3cg-bg: var(--background);
-  --t3cg-hover: color-mix(in oklab, var(--accent) 60%, transparent);
-  --t3cg-selected: color-mix(in oklab, var(--accent) 100%, transparent);
+  --t3cg-line: color-mix(in oklab, var(--t3cg-border) 70%, transparent);
+  --t3cg-hover: color-mix(in oklab, var(--foreground) 5.5%, transparent);
+  --t3cg-selected: color-mix(in oklab, var(--foreground) 9%, transparent);
   --t3cg-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   --t3cg-add: #3fb950;
   --t3cg-del: #f85149;
@@ -276,18 +277,19 @@
 .t3cg-copy-failed { color: var(--t3cg-del); }
 
 /* ---- files popdown ---- */
-.t3cg-details-row > td { padding: 0; vertical-align: top; height: auto; white-space: normal; }
-.t3cg-details-wrap { position: relative; padding: 2px 0 6px; }
+/* A single subtle 1px line above and below the list, no margin or padding (as in VS Code). */
+.t3cg-details-row > td { padding: 0; vertical-align: top; height: auto; white-space: normal; border-top: 1px solid var(--t3cg-line); border-bottom: 1px solid var(--t3cg-line); }
+.t3cg-details-wrap { position: relative; }
 .t3cg-details-row .t3cg-graph-cont { position: absolute; top: 0; left: 4px; height: 100%; }
 .t3cg-details {
   position: relative;
-  margin: 0 8px 0 0;
+  margin: 0;
   overflow: hidden;
   user-select: text;
   cursor: auto;
 }
 .t3cg-details-loading { padding: 12px; }
-.t3cg-details-files { min-width: 0; max-height: 240px; padding: 0; overflow: auto; }
+.t3cg-details-files { min-width: 0; max-height: 240px; padding: 0 8px 0 0; overflow: auto; }
 .t3cg-parent-sel { display: flex; align-items: center; gap: 4px; padding: 2px 4px 6px; color: var(--t3cg-muted); }
 .t3cg-file-row {
   display: flex;
