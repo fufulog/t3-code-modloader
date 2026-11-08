@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
-const { dispatch } = require("../src/mods/commit-graph/git.cjs")._test;
+const { dispatch } = require("../mods/commit-graph/git.cjs")._test;
 
 const base = mkdtempSync(join(tmpdir(), "t3cg-git-"));
 const remote = join(base, "remote.git");

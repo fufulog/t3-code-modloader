@@ -6,8 +6,9 @@
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
-    "test": "node test/git.test.mjs",
+    "test": "node test/git.test.mjs && node test/mods.test.mjs",
     "test:patches": "node test/patches.test.mjs",
-    "inject": "node bin/t3mod-inject.mjs"
+    "inject": "node bin/t3mod-inject.mjs",
+    "pack": "node bin/t3mod-pack.mjs"
   }
 }

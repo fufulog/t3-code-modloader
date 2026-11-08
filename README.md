@@ -77,22 +77,65 @@ Auto-updates also go through the launcher. When T3's updater spawns the new `*.A
 ## How mods work
 
 ```
-src/main/loader.cjs      protocol interception, chunk patching, mod asset serving, IPC setup
-src/main/preload.cjs     exposes window.t3mod.invoke(channel, payload); channels must match t3mod:<mod>:<name>
-src/mods/<name>/mod.cjs  { patches, main }
+src/main/loader.cjs   protocol interception, chunk patching, mod asset serving, IPC setup
+src/main/mods.cjs     finds mods (folder or zip) and runs their code from memory
+src/main/zip.cjs      the zip reader/writer
+src/main/preload.cjs  exposes window.t3mod.invoke(channel, payload); channels must match t3mod:<mod>:<name>
+src/core/             built in: the Mods button and modal (always loaded)
+mods/                 your mods: one folder or one .zip each
 ```
 
 - T3 serves its UI from `t3code://app/…`. The loader wraps that protocol handler:
   - it rewrites matching JS chunks on the fly;
-  - it serves `/__t3mod/<mod>/…` from the mod's `client/` directory;
+  - it serves `/__t3mod/<mod>/…` from the mod's `client/` files;
   - `/__t3mod/status.json` reports each mod's status.
 - Patches are string-anchored. Minified identifiers are captured by regex, not hard-coded. Each mod is verified as a whole against the current bundle before it is enabled: if any required anchor is missing (e.g. after a T3 update), that mod turns itself off and T3 loads unmodified.
-- `main({ electron, ipcMain, log, isTrustedSender })` runs in the main process to register IPC handlers.
+- `main({ electron, ipcMain, log, isTrustedSender, loader })` runs in the main process to register IPC handlers. What a mod registers on `ipcMain` is tracked, so unloading it takes the handlers back.
+
+## The Mods button
+
+A **Mods** button sits in the sidebar footer, right after Usage. It opens a modal with **Loaded** on the left and **Available** on the right. Selecting a mod previews its `mod.md`; **Load** / **Unload** applies the change and reloads T3's window (patches are applied as the client loads). **Open folder** opens `mods/`; **Rescan** picks up files you just dropped in.
+
+Which mods run is kept in `~/.config/t3-modloader/config.json` (`{ "enabled": [...] }`, or `$T3MOD_CONFIG`). On the first run everything found is enabled. A mod dropped in later starts out **Available**: mods run with full access in T3's main process, so nothing new runs until you load it.
+
+## Writing a mod
+
+A mod is a folder in `mods/`, or the same folder as a `.zip` (or `.t3mod`) file. Both work the same way. A zip is read into memory and its code is compiled from memory; nothing is unpacked. The files may sit at the zip's root or inside one wrapping folder.
+
+```
+my-mod/
+  mod.md       manifest and description (shown in the modal)
+  mod.cjs      optional: module.exports = { patches, main }
+  client/      optional: static files, served at /__t3mod/<id>/...
+```
+
+`mod.md` is markdown with a small frontmatter. Everything after the frontmatter is the preview in the modal (headings, lists, code, bold/italic; HTML is escaped):
+
+```markdown
+---
+id: my-mod            # lowercase letters, digits, dashes; defaults to the folder or zip name
+name: My Mod
+version: 1.0.0
+author: you
+description: One line for the list.
+---
+
+# My Mod
+What it does.
+```
+
+`mod.cjs` can `require` node built-ins, `electron` and its own files (`./x.cjs`, `./data.json`). It cannot require npm packages; bundle them into a file instead. Pack a folder into a zip with:
+
+```sh
+node bin/t3mod-pack.mjs mods/my-mod            # writes mods/my-mod.zip
+```
+
+Mods are a folder or a zip, never both under one id; the first one found wins and the other is reported as a duplicate in the modal.
 
 ## Tests
 
 ```sh
-npm test                                    # git ops against a throwaway repo + bare remote, incl. hostile input
+npm test                                    # git ops against a throwaway repo + bare remote, incl. hostile input; then zip/discovery/config tests
 node test/patches.test.mjs <client dir>     # anchors + syntax of patched chunks, against an extracted app.asar
 ```
 
@@ -106,5 +149,5 @@ To get a client dir: `npx @electron/asar extract <mount>/resources/app.asar out`
 
 ## Third-party assets
 
-- File-type icons in `src/mods/commit-graph/client/icons/` come from [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) 5.40.0 (MIT, licence alongside them). Regenerate with `node bin/vendor-icons.mjs <extracted package dir>`.
+- File-type icons in `mods/commit-graph/client/icons/` come from [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) 5.40.0 (MIT, licence alongside them). Regenerate with `node bin/vendor-icons.mjs <extracted package dir>`.
 - Toolbar icons (search, fetch, pull, push, refresh, more) are [VS Code Codicons](https://github.com/microsoft/vscode-codicons) 0.0.45, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), inlined in `runtime.js`.

@@ -16,15 +16,20 @@
 
 const path = require("node:path");
 const fs = require("node:fs");
+const os = require("node:os");
+const modsLib = require("./mods.cjs");
 
 const ROOT = path.resolve(__dirname, "../..");
 const STATE_KEY = "__t3modMain";
 const MOD_PREFIX = "/__t3mod/";
 const SCHEMES = new Set(["t3code", "t3code-dev"]);
+const CORE_ID = "core"; // built-in (src/core): the Mods button and modal. Always loaded, not listed.
 
 function state() {
-  if (!globalThis[STATE_KEY]) globalThis[STATE_KEY] = { log: [], status: {}, csp: null, handlerInstalled: false };
-  return globalThis[STATE_KEY];
+  const s = (globalThis[STATE_KEY] ??= { log: [], status: {}, csp: null, handlerInstalled: false });
+  s.catalog ??= []; // fields added after a live-injected older version created the state
+  s.owned ??= {};
+  return s;
 }
 
 function log(...parts) {
@@ -37,17 +42,58 @@ function log(...parts) {
   } catch {}
 }
 
-function loadMods() {
-  const modsDir = path.join(ROOT, "src/mods");
-  const mods = [];
-  for (const name of fs.readdirSync(modsDir).sort()) {
-    const entry = path.join(modsDir, name, "mod.cjs");
-    if (!fs.existsSync(entry)) continue;
-    delete require.cache[entry];
-    const mod = require(entry);
-    mods.push({ name, dir: path.join(modsDir, name), ...mod });
+// ---- mod folder + config ------------------------------------------------------
+
+/** Where mods live: <repo>/mods, or $T3MOD_MODS_DIR. Folders and .zip/.t3mod files both work. */
+const modsDir = () => process.env.T3MOD_MODS_DIR || path.join(ROOT, "mods");
+const configFile = () => process.env.T3MOD_CONFIG || path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "t3-modloader", "config.json");
+
+/**
+ * Which mods run is the user's choice, kept in config.json as { enabled: [id...] }.
+ * First run (no file): everything found is enabled. Mods dropped in later start
+ * out Available, so nothing new runs in T3's main process until it is loaded by hand.
+ */
+function readEnabled(found) {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(configFile(), "utf8"));
+    if (Array.isArray(cfg.enabled)) return new Set(cfg.enabled.filter((x) => typeof x === "string"));
+  } catch {}
+  const first = new Set(found.filter((m) => m.usable).map((m) => m.id));
+  writeEnabled(first);
+  return first;
+}
+
+function writeEnabled(set) {
+  try {
+    fs.mkdirSync(path.dirname(configFile()), { recursive: true });
+    fs.writeFileSync(configFile(), JSON.stringify({ enabled: [...set].sort() }, null, 2) + "\n");
+  } catch (e) {
+    log(`could not save ${configFile()}: ${e.message}`);
   }
-  return mods;
+}
+
+/**
+ * Discover mods and instantiate the ones to run. `all` (tests) ignores the config
+ * and loads every usable mod. Returns { mods, found }.
+ */
+function loadMods({ all = false } = {}) {
+  const core = modsLib.inspect(path.join(ROOT, "src/core"));
+  core.id = CORE_ID;
+  const found = modsLib.discover(modsDir());
+  const enabled = all ? null : readEnabled(found);
+  const mods = [];
+  for (const entry of [core, ...found]) {
+    entry.enabled = entry === core || !enabled || enabled.has(entry.id);
+    if (!entry.usable || !entry.enabled) continue;
+    try {
+      const exported = modsLib.loadCode(entry, require);
+      mods.push({ name: entry.id, entry, ...exported });
+    } catch (e) {
+      entry.usable = false;
+      entry.problems.push(`failed to load: ${e.message}`);
+    }
+  }
+  return { mods, found, core };
 }
 
 // ---- chunk patching -------------------------------------------------------
@@ -122,7 +168,7 @@ function contentType(file) {
   );
 }
 
-/** Serve /__t3mod/<mod>/<file> from a mod's `client/` directory. */
+/** Serve /__t3mod/<mod>/<file> from a mod's client/ files (folder or zip, same path). */
 function serveModAsset(pathname, mods) {
   const rest = pathname.slice(MOD_PREFIX.length);
   if (rest === "status.json") {
@@ -132,10 +178,15 @@ function serveModAsset(pathname, mods) {
   const [modName, ...fileParts] = rest.split("/");
   const mod = mods.find((m) => m.name === modName);
   if (!mod || state().status[modName]?.ok !== true) return new Response(null, { status: 404 });
-  const clientDir = path.join(mod.dir, "client");
-  const file = path.resolve(clientDir, fileParts.join("/"));
-  if (!file.startsWith(clientDir + path.sep) || !fs.existsSync(file)) return new Response(null, { status: 404 });
-  return new Response(fs.readFileSync(file), { headers: { "content-type": contentType(file), "cache-control": "no-store" } });
+  let rel;
+  try {
+    rel = decodeURIComponent(fileParts.join("/"));
+  } catch {
+    return new Response(null, { status: 400 });
+  }
+  const body = mod.entry.files.read(`client/${rel}`);
+  if (!body) return new Response(null, { status: 404 });
+  return new Response(body, { headers: { "content-type": contentType(rel), "cache-control": "no-store" } });
 }
 
 function makeWrapped(inner, getMods) {
@@ -199,20 +250,63 @@ function assetDirFor(electron) {
   return path.join(electron.app.getAppPath(), "apps/server/dist/client");
 }
 
-function refreshMods(electron) {
-  const mods = loadMods();
-  state().status = verifyMods(assetDirFor(electron), mods);
-  state().mods = mods;
+function refreshMods(electron, opts) {
+  const { mods, found, core } = loadMods(opts);
+  const status = verifyMods(assetDirFor(electron), mods);
+  for (const entry of [core, ...found]) {
+    if (!entry.usable && entry.enabled) status[entry.id] = { ok: false, problems: entry.problems };
+  }
+  const s = state();
+  s.status = status;
+  s.mods = mods;
+  s.catalog = found.map((m) => ({
+    id: m.id,
+    name: m.name,
+    version: m.version,
+    author: m.author,
+    description: m.description,
+    markdown: m.markdown,
+    kind: m.kind,
+    file: m.file,
+    enabled: m.enabled,
+    ok: m.enabled ? status[m.id]?.ok === true : null,
+    problems: [...m.problems.filter((p) => !status[m.id]?.problems?.includes(p)), ...(status[m.id]?.problems ?? [])],
+  }));
   // Route the (possibly older) installed handler through this module's code.
-  state().dispatch = (request, inner) => makeWrapped(inner, getMods)(request);
+  s.dispatch = (request, inner) => makeWrapped(inner, getMods)(request);
+}
+
+/** ipcMain that remembers what a mod registered, so unloading it can take the handlers back. */
+function trackedIpc(ipcMain, name) {
+  const mine = [];
+  const remember = (kind) => (channel, fn) => {
+    mine.push([kind, channel, fn]);
+    return ipcMain[kind](channel, fn);
+  };
+  const proxy = new Proxy(ipcMain, {
+    get: (t, k) => (k === "handle" || k === "on" || k === "once" ? remember(k) : typeof t[k] === "function" ? t[k].bind(t) : t[k]),
+  });
+  state().owned[name] = mine;
+  return proxy;
+}
+
+function releaseIpc(ipcMain, name) {
+  for (const [kind, channel, fn] of state().owned[name] ?? []) {
+    if (kind === "handle") ipcMain.removeHandler(channel);
+    else ipcMain.removeListener(channel, fn);
+  }
+  delete state().owned[name];
 }
 
 function setupMain(electron) {
   const { ipcMain, session } = electron;
+  const active = new Set(getMods().map((m) => m.name));
+  for (const name of Object.keys(state().owned)) if (!active.has(name) || !state().status[name]?.ok) releaseIpc(ipcMain, name);
   for (const mod of getMods()) {
     if (!state().status[mod.name]?.ok || typeof mod.main !== "function") continue;
+    releaseIpc(ipcMain, mod.name);
     try {
-      mod.main({ electron, ipcMain, log: (...a) => log(`[${mod.name}]`, ...a), isTrustedSender });
+      mod.main({ electron, ipcMain: trackedIpc(ipcMain, mod.name), log: (...a) => log(`[${mod.name}]`, ...a), isTrustedSender, loader: loaderApi(electron) });
     } catch (e) {
       log(`mod ${mod.name} main() failed: ${e.stack ?? e}`);
     }
@@ -225,6 +319,45 @@ function setupMain(electron) {
       log("preload registered");
     } catch (e) {
       log(`preload registration failed: ${e.message}`);
+    }
+  }
+}
+
+/** What the built-in Mods modal may ask of the loader (reached over IPC by src/core). */
+function loaderApi(electron) {
+  const view = () => ({ modsDir: modsDir(), mods: state().catalog });
+  return {
+    list: view,
+    rescan() {
+      refreshMods(electron);
+      setupMain(electron);
+      return view();
+    },
+    setEnabled(id, on) {
+      const entry = state().catalog.find((m) => m.id === id);
+      if (!entry) throw new Error(`no such mod: ${id}`);
+      const enabled = new Set(state().catalog.filter((m) => m.enabled).map((m) => m.id));
+      on ? enabled.add(id) : enabled.delete(id);
+      writeEnabled(enabled);
+      refreshMods(electron);
+      setupMain(electron);
+      log(`${on ? "loaded" : "unloaded"} ${id}`);
+      // Patches apply as chunks are fetched, so the window reloads; let the IPC reply go out first.
+      setTimeout(() => reloadWindows(electron), 120);
+      return view();
+    },
+    openFolder() {
+      fs.mkdirSync(modsDir(), { recursive: true });
+      return electron.shell.openPath(modsDir());
+    },
+  };
+}
+
+function reloadWindows(electron) {
+  for (const wc of electron.webContents.getAllWebContents()) {
+    if (wc.getType() === "window" && wc.getURL().startsWith("t3code://app/")) {
+      wc.session.clearCache?.().catch(() => {});
+      wc.reloadIgnoringCache();
     }
   }
 }
@@ -320,7 +453,7 @@ function relaunchThroughLauncher(launcher) {
 
 async function live({ reload = true } = {}) {
   const electron = require("electron");
-  const { protocol, net, webContents } = electron;
+  const { protocol, net } = electron;
   const s = state();
   refreshMods(electron);
 
@@ -343,15 +476,8 @@ async function live({ reload = true } = {}) {
   }
   setupMain(electron);
 
-  if (reload) {
-    for (const wc of webContents.getAllWebContents()) {
-      if (wc.getType() === "window" && wc.getURL().startsWith("t3code://app/")) {
-        wc.session.clearCache?.().catch(() => {});
-        wc.reloadIgnoringCache();
-      }
-    }
-  }
+  if (reload) reloadWindows(electron);
   return { status: s.status, log: s.log.slice(-15) };
 }
 
-module.exports = { live, cold, _internals: { patchChunk, verifyMods, loadMods } };
+module.exports = { live, cold, _internals: { patchChunk, verifyMods, loadMods, loaderApi } };

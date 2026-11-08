@@ -5,7 +5,7 @@
 //   npm pack material-icon-theme@5.40.0 && tar xzf material-icon-theme-5.40.0.tgz
 //   node bin/vendor-icons.mjs ./package
 //
-// Writes src/mods/commit-graph/client/icons/{*.svg,map.json,LICENSE}, replacing what is there.
+// Writes mods/commit-graph/client/icons/{*.svg,map.json,LICENSE}, replacing what is there.
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,7 @@ if (!pkg) {
   console.error("usage: node bin/vendor-icons.mjs <extracted material-icon-theme package dir>");
   process.exit(1);
 }
-const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/mods/commit-graph/client/icons");
+const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), "../mods/commit-graph/client/icons");
 const { version } = JSON.parse(readFileSync(path.join(pkg, "package.json"), "utf8"));
 const manifest = JSON.parse(readFileSync(path.join(pkg, "dist/material-icons.json"), "utf8"));
 

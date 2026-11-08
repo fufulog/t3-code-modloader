@@ -21,7 +21,7 @@ if (!clientDir) {
 const assets = join(clientDir, "assets");
 const files = readdirSync(assets).filter((f) => f.endsWith(".js"));
 const { _internals } = require(join(ROOT, "src/main/loader.cjs"));
-const mods = _internals.loadMods();
+const mods = _internals.loadMods({ all: true }).mods;
 
 let failed = 0;
 const verdicts = _internals.verifyMods(clientDir, mods);
@@ -50,6 +50,7 @@ for (const f of files) {
 const expectations = {
   rightPanelStore: ["case`commit-graph`:return{id:`commit-graph`", "case`pull-requests`:case`commit-graph`:return"],
   PanelLayoutControls: ["case`commit-graph`:return`Commit Graph`", "case`commit-graph`:return globalThis", "?.menuItems("],
+  main: ["label:`Mods`,onClick:()=>globalThis.__t3mod?.core?.open?.()", 'import "/__t3mod/core/runtime.js"'],
   _chat: ["?.bindOpener(", "case`commit-graph`:return globalThis"],
 };
 for (const [prefix, needles] of Object.entries(expectations)) {
