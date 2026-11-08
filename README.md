@@ -51,7 +51,8 @@ The modloader itself is the built-in `core` mod: it owns the Mods button and win
 - Inline commit details:
   - parent links and a selector to compare a merge against parent 1 or 2;
   - a file tree with compacted folders and +/− counts;
-  - click a file to open its unified diff.
+  - click a file to open its diff in T3's own diff component (syntax highlighting, folded unchanged lines, Diff / Full file toggle); the "+" in the gutter adds a line comment that lands in the chat composer as a reference;
+  - the clock icon at the top right switches to the built-in plain diff (remembered). That plain view is also the automatic fallback when a T3 update moves the anchors the T3 diff needs.
 - Toolbar:
   - a Branches filter, saved per repo;
   - a Remotes toggle;
@@ -129,6 +130,7 @@ mods/                 your mods: one folder or one .zip each
   - it rewrites matching JS chunks on the fly;
   - it serves `/__t3mod/<mod>/…` from the mod's `client/` files;
   - `/__t3mod/status.json` reports each mod's status.
+- A patch can be `optional: true`: if its anchor is missing it is skipped and logged, and the mod stays loaded (Commit Graph uses this for T3's diff component).
 - Patches are string-anchored. Minified identifiers are captured by regex, not hard-coded. Each mod is verified as a whole against the current bundle before it is enabled: if any required anchor is missing (e.g. after a T3 update), that mod turns itself off and T3 loads unmodified.
 - `main({ electron, ipcMain, log, isTrustedSender, loader })` runs in the main process to register IPC handlers. What a mod registers on `ipcMain` is tracked, so unloading it takes the handlers back.
 

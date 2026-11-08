@@ -167,6 +167,7 @@ if (!NS.commitGraph) {
     check: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-ico-check"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M20 6 9 17l-5-5"/></svg>`,
     back: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 12H5m7 7-7-7 7-7"/></svg>`,
     diff: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v14M5 10h14M5 21h14"/></svg>`,
+    legacy: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l4 2"/></svg>`,
     file: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8"/></svg>`,
     up: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m18 15-6-6-6 6"/></svg>`,
     down: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>`,
@@ -358,6 +359,7 @@ if (!NS.commitGraph) {
 
   // ---- the view ---------------------------------------------------------------------
   const STORAGE = "t3mod:commit-graph:v1";
+  const LEGACY_KEY = "t3mod:commit-graph:legacy-diff";
   const loadPrefs = () => {
     try {
       return JSON.parse(localStorage.getItem(STORAGE)) ?? {};
@@ -771,6 +773,7 @@ if (!NS.commitGraph) {
       overlay.innerHTML = `<div class="t3cg-diff-head"><button type="button" class="t3cg-icon-btn" data-act="close" title="Back (Escape)" aria-label="Back">${SVG.back}</button><span class="t3cg-st-${esc(file.status)} t3cg-st">${esc(STATUS_LETTER[file.status] ?? file.status)}</span><span class="t3cg-diff-title">${title}</span>
         <span class="t3cg-muted t3cg-mono">${isUncommitted ? "Uncommitted" : `${esc(short(d.comparedTo ?? ""))}${d.comparedTo ? " ↔ " : ""}${esc(short(d.hash))}`}</span>
         <div class="t3cg-spacer"></div>
+        <div class="t3cg-seg" role="group" aria-label="Diff style" hidden><button type="button" class="t3cg-icon-btn" data-act="legacy" title="Use legacy diff" aria-label="Use legacy diff" aria-pressed="false">${SVG.legacy}</button></div>
         <div class="t3cg-seg" role="group" aria-label="View"><button type="button" class="t3cg-icon-btn t3cg-on" data-view="diff" title="Diff" aria-label="Diff" aria-pressed="true">${SVG.diff}</button><button type="button" class="t3cg-icon-btn" data-view="full" title="Full file" aria-label="Full file" aria-pressed="false">${SVG.file}</button></div></div>
         <div class="t3cg-diff-body"><div class="t3cg-muted" style="padding:12px">Loading diff…</div></div>`;
       const close = () => {
@@ -780,6 +783,13 @@ if (!NS.commitGraph) {
       };
       overlay.addEventListener("click", (e) => {
         if (e.target.closest("[data-act=close]")) return close();
+        if (e.target.closest("[data-act=legacy]")) {
+          legacy = !legacy;
+          try {
+            localStorage.setItem(LEGACY_KEY, legacy ? "1" : "0");
+          } catch {}
+          return show(current);
+        }
         const v = e.target.closest("[data-view]")?.dataset.view;
         if (v) show(v);
       });
@@ -857,6 +867,10 @@ if (!NS.commitGraph) {
         body.scrollTop = 0;
       };
       let current = null;
+      let legacy = false;
+      try {
+        legacy = localStorage.getItem(LEGACY_KEY) === "1";
+      } catch {}
       const show = async (view) => {
         current = view;
         for (const b of overlay.querySelectorAll("[data-view]")) {
@@ -866,7 +880,14 @@ if (!NS.commitGraph) {
         }
         const ready = await t3;
         if (current !== view) return;
-        if (ready) return showT3(ready, view);
+        // The legacy toggle only exists when T3's renderer does; it picks the plain table below.
+        const legacyBtn = overlay.querySelector("[data-act=legacy]");
+        legacyBtn.parentElement.hidden = !ready;
+        legacyBtn.classList.toggle("t3cg-on", legacy);
+        legacyBtn.setAttribute("aria-pressed", String(legacy));
+        legacyBtn.title = legacyBtn.ariaLabel = legacy ? "Use T3's diff" : "Use legacy diff";
+        if (ready && !legacy) return showT3(ready, view);
+        unmountT3();
         if (cache[view] === undefined) {
           body.innerHTML = `<div class="t3cg-muted" style="padding:12px">Loading…</div>`;
           try {
