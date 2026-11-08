@@ -252,7 +252,15 @@ if (!NS.commitGraph) {
   const curve = (x1, y1, x2, y2) => (x1 === x2 ? `M${x1} ${y1}L${x2} ${y2}` : `M${x1} ${y1}C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2} ${x2} ${y2}`);
   const pathEl = (d, color, dashed) => `<path d="${d}" stroke="${color}"${dashed ? ' stroke-dasharray="2 2"' : ""}/>`;
 
-  function rowSvg(g, width, kind, isHead) {
+  // Lanes a row actually draws in: its own node, lines passing through, and lines leaving it.
+  // Rows are sized to this, so the text indents and un-indents with the graph, like VS Code.
+  const lastLane = (lanes) => {
+    for (let i = lanes.length - 1; i >= 0; i--) if (lanes[i]) return i + 1;
+    return 0;
+  };
+  const rowLanes = (g) => Math.max(1, g.idx + 1, lastLane(g.before), lastLane(g.after), ...g.conns.map((c) => c.lane + 1));
+
+  function rowSvg(g, kind, isHead) {
     const mid = ROW_H / 2;
     let paths = "";
     // Lines from above either end in this node or pass straight through (lanes
@@ -269,12 +277,12 @@ if (!NS.commitGraph) {
     else if (kind === "stash") node = `<circle cx="${cx}" cy="${mid}" r="${NODE_R + 0.5}" class="t3cg-node-hollow" stroke="${g.color}"/><circle cx="${cx}" cy="${mid}" r="2" fill="${g.color}"/>`;
     else if (isHead) node = `<circle cx="${cx}" cy="${mid}" r="${NODE_R}" class="t3cg-node-hollow" stroke="${g.color}"/>`;
     else node = `<circle cx="${cx}" cy="${mid}" r="${NODE_R}" fill="${g.color}"/>`;
-    const w = width * LANE_W;
+    const w = rowLanes(g) * LANE_W;
     return `<svg class="t3cg-graph" width="${w}" height="${ROW_H}" viewBox="0 0 ${w} ${ROW_H}">${paths}${node}</svg>`;
   }
 
-  function continuationSvg(after, width) {
-    const w = width * LANE_W;
+  function continuationSvg(after) {
+    const w = Math.max(1, lastLane(after)) * LANE_W;
     let paths = "";
     after.forEach((l, i) => {
       if (l) paths += `<path d="M${X(i)} 0L${X(i)} 1" stroke="${l.color}" vector-effect="non-scaling-stroke"${l.dashed ? ' stroke-dasharray="2 2"' : ""}/>`;
@@ -404,7 +412,6 @@ if (!NS.commitGraph) {
           </div>
           <div class="t3cg-scroll">
             <table class="t3cg-table">
-              <colgroup><col data-col="graph"/><col data-col="desc"/></colgroup>
               <tbody></tbody>
             </table>
             <div class="t3cg-message"></div>
@@ -576,9 +583,6 @@ if (!NS.commitGraph) {
       this.rows = this.buildRows();
       const lay = layout(this.rows);
       this.layout = lay;
-      // No column header, so no manual resize: the graph column fits its lanes.
-      const graphW = Math.min(Math.max(lay.width * LANE_W + 8, 64), 360);
-      this.applyWidths(graphW);
 
       const refMap = this.refsByCommit();
       const html = [];
@@ -593,8 +597,7 @@ if (!NS.commitGraph) {
         const key = row.kind === "uncommitted" ? "*" : row.hash;
         const cls = ["t3cg-row", merge ? "t3cg-merge" : "", isHead ? "t3cg-head" : "", row.kind === "uncommitted" ? "t3cg-uncommitted" : "", this.expanded?.key === key ? "t3cg-expanded" : ""].filter(Boolean).join(" ");
         html.push(`<tr class="${cls}" data-i="${i}">
-          <td class="t3cg-c-graph">${rowSvg(g, lay.width, row.kind, isHead)}</td>
-          <td class="t3cg-c-desc"><span class="t3cg-desc">${labels}${stashLabel}<span class="t3cg-subject">${esc(row.subject)}</span>${row.kind === "uncommitted" ? "" : `<span class="t3cg-by">${esc(row.author)}</span>`}</span></td>
+          <td class="t3cg-c-main"><div class="t3cg-line">${rowSvg(g, row.kind, isHead)}<span class="t3cg-desc">${labels}${stashLabel}<span class="t3cg-subject">${esc(row.subject)}</span>${row.kind === "uncommitted" ? "" : `<span class="t3cg-by">${esc(row.author)}</span>`}</span></div></td>
         </tr>`);
         if (this.expanded?.key === key) html.push(this.detailsHtml(row, g, lay.width));
       });
@@ -614,16 +617,6 @@ if (!NS.commitGraph) {
         return `<span class="t3cg-ref t3cg-ref-head t3cg-ref-remoteonly" style="--lane:${color}" data-ref-type="remote" data-ref="${esc(r.name)}">${SVG.branch}<span class="t3cg-ref-name">${esc(r.name)}</span></span>`;
       if (r.type === "tag") return `<span class="t3cg-ref t3cg-ref-tag" data-ref-type="tag" data-ref="${esc(r.name)}">${SVG.tag}<span class="t3cg-ref-name">${esc(r.name)}</span></span>`;
       return `<span class="t3cg-ref t3cg-ref-head t3cg-ref-current" style="--lane:${color}"><span class="t3cg-ref-name">HEAD</span></span>`;
-    }
-
-    applyWidths(graphW) {
-      const cols = this.root.querySelectorAll("col");
-      const set = (name, px) => {
-        const col = [...cols].find((c) => c.dataset.col === name);
-        if (col) col.style.width = px ? `${px}px` : "";
-      };
-      set("graph", graphW);
-      set("desc", null);
     }
 
     // ---- hover card: full message and commit facts, shown after a short pause on a row
@@ -722,7 +715,9 @@ if (!NS.commitGraph) {
             : "";
         body = `<div class="t3cg-details-files">${parentSel}${this.filesHtml(d)}</div>`;
       }
-      return `<tr class="t3cg-details-row"><td class="t3cg-c-graph">${continuationSvg(g.after, width)}</td><td><div class="t3cg-details">${body}</div></td></tr>`;
+      // Lanes still open below the commit run down beside the file list; the list starts after them.
+      const indent = Math.max(1, lastLane(g.after)) * LANE_W;
+      return `<tr class="t3cg-details-row"><td><div class="t3cg-details-wrap" style="padding-left:${indent + 8}px">${continuationSvg(g.after)}<div class="t3cg-details">${body}</div></div></td></tr>`;
     }
 
     filesHtml(d) {

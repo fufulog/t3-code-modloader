@@ -148,7 +148,11 @@
   text-overflow: ellipsis;
   vertical-align: middle;
 }
-.t3cg-table td.t3cg-c-graph { padding: 0 0 0 4px; overflow: hidden; text-overflow: clip; line-height: 0; }
+/* One cell per row: the row's own graph, then its text right after it (indents with the lanes). */
+.t3cg-table td.t3cg-c-main { padding: 0 8px 0 4px; }
+.t3cg-line { display: flex; align-items: center; gap: 4px; min-width: 0; height: 24px; }
+.t3cg-line > .t3cg-graph { flex-shrink: 0; }
+.t3cg-line > .t3cg-desc { flex: 1; }
 .t3cg-graph { display: block; overflow: visible; }
 .t3cg-graph path { fill: none; stroke-width: 2; }
 .t3cg-graph .t3cg-node-hollow { fill: var(--t3cg-bg); stroke-width: 2; }
@@ -273,11 +277,11 @@
 
 /* ---- files popdown ---- */
 .t3cg-details-row > td { padding: 0; vertical-align: top; height: auto; white-space: normal; }
-.t3cg-details-row > td.t3cg-c-graph { position: relative; }
+.t3cg-details-wrap { position: relative; padding: 2px 0 6px; }
 .t3cg-details-row .t3cg-graph-cont { position: absolute; top: 0; left: 4px; height: 100%; }
 .t3cg-details {
   position: relative;
-  margin: 2px 8px 6px 0;
+  margin: 0 8px 0 0;
   border: 1px solid var(--t3cg-border);
   border-radius: 8px;
   background: var(--card, var(--t3cg-bg));
