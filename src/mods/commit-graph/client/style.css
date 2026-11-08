@@ -282,15 +282,12 @@
 .t3cg-details {
   position: relative;
   margin: 0 8px 0 0;
-  border: 1px solid var(--t3cg-border);
-  border-radius: 8px;
-  background: var(--card, var(--t3cg-bg));
   overflow: hidden;
   user-select: text;
   cursor: auto;
 }
 .t3cg-details-loading { padding: 12px; }
-.t3cg-details-files { min-width: 0; max-height: 240px; padding: 6px; overflow: auto; }
+.t3cg-details-files { min-width: 0; max-height: 240px; padding: 0; overflow: auto; }
 .t3cg-parent-sel { display: flex; align-items: center; gap: 4px; padding: 2px 4px 6px; color: var(--t3cg-muted); }
 .t3cg-file-row {
   display: flex;
@@ -469,8 +466,3 @@
 .t3cg-d-hunk td { color: var(--t3cg-ren); background: color-mix(in oklab, var(--t3cg-ren) 8%, transparent); padding-top: 2px; padding-bottom: 2px; }
 .t3cg-d-meta td { color: var(--t3cg-muted); font-style: italic; }
 
-/* Narrow right panel: stack the details panel and tighten the toolbar. */
-@container t3cg (max-width: 760px) {
-  .t3cg-details { flex-direction: column; height: auto; max-height: 460px; }
-  .t3cg-details-files { flex: 1 1 auto; min-height: 120px; padding-right: 8px; }
-}
