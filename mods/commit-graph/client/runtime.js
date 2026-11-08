@@ -165,6 +165,7 @@ if (!NS.commitGraph) {
     close: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M18 6 6 18M6 6l12 12"/></svg>`,
     copy: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-ico-copy"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></g></svg>`,
     check: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-ico-check"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M20 6 9 17l-5-5"/></svg>`,
+    back: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 12H5m7 7-7-7 7-7"/></svg>`,
     up: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m18 15-6-6-6 6"/></svg>`,
     down: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>`,
     chevron: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-chev"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>`,
@@ -764,9 +765,8 @@ if (!NS.commitGraph) {
       overlay.className = "t3cg-diff-overlay";
       overlay.tabIndex = -1;
       const title = `${esc(file.path)}${file.oldPath && file.oldPath !== file.path ? ` <span class="t3cg-muted">(renamed from ${esc(file.oldPath)})</span>` : ""}`;
-      overlay.innerHTML = `<div class="t3cg-diff-head"><span class="t3cg-st-${esc(file.status)} t3cg-st">${esc(STATUS_LETTER[file.status] ?? file.status)}</span><span class="t3cg-diff-title">${title}</span>
-        <span class="t3cg-muted t3cg-mono">${isUncommitted ? "Uncommitted" : `${esc(short(d.comparedTo ?? ""))}${d.comparedTo ? " ↔ " : ""}${esc(short(d.hash))}`}</span>
-        <div class="t3cg-spacer"></div><button type="button" class="t3cg-icon-btn" data-act="close" title="Close (Escape)">${SVG.close}</button></div>
+      overlay.innerHTML = `<div class="t3cg-diff-head"><button type="button" class="t3cg-icon-btn" data-act="close" title="Back (Escape)" aria-label="Back">${SVG.back}</button><span class="t3cg-st-${esc(file.status)} t3cg-st">${esc(STATUS_LETTER[file.status] ?? file.status)}</span><span class="t3cg-diff-title">${title}</span>
+        <span class="t3cg-muted t3cg-mono">${isUncommitted ? "Uncommitted" : `${esc(short(d.comparedTo ?? ""))}${d.comparedTo ? " ↔ " : ""}${esc(short(d.hash))}`}</span></div>
         <div class="t3cg-diff-body"><div class="t3cg-muted" style="padding:12px">Loading diff…</div></div>`;
       const close = () => {
         overlay.remove();
