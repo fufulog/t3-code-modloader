@@ -165,9 +165,9 @@
 .t3cg-row.t3cg-uncommitted .t3cg-subject { font-style: italic; color: var(--t3cg-muted); }
 .t3cg-row.t3cg-found td { background: color-mix(in oklab, var(--t3cg-mod) 14%, transparent); }
 .t3cg-row.t3cg-found-cur td { background: color-mix(in oklab, var(--t3cg-mod) 32%, transparent); }
-.t3cg-desc { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.t3cg-desc { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; }
 .t3cg-subject { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.t3cg-by { flex-shrink: 0; margin-left: 6px; color: var(--t3cg-muted); font-size: 12px; white-space: nowrap; }
+.t3cg-by { flex-shrink: 0; margin-left: 6px; color: var(--t3cg-muted); font-size: 11px; white-space: nowrap; }
 
 /* ---- ref labels: rounded pills ---- */
 .t3cg-ref {
