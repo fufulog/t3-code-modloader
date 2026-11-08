@@ -478,3 +478,7 @@
 .t3cg-d-hunk td { color: var(--t3cg-ren); background: color-mix(in oklab, var(--t3cg-ren) 8%, transparent); padding-top: 2px; padding-bottom: 2px; }
 .t3cg-d-meta td { color: var(--t3cg-muted); font-style: italic; }
 
+
+/* T3's own diff section fills the diff body (it scrolls itself) */
+.t3cg-diff-body:has(> .t3cg-t3diff) { overflow: hidden; }
+.t3cg-t3diff { height: 100%; min-height: 0; }

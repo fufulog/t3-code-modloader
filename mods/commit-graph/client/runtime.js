@@ -445,8 +445,9 @@ if (!NS.commitGraph) {
       this.host.innerHTML = "";
     }
 
-    setProps({ cwd, visible, threadRef }) {
+    setProps({ cwd, visible, threadRef, t3 }) {
       this.threadRef = threadRef;
+      this.t3 = t3;
       this.visible = visible !== false;
       if (cwd !== this.cwd) {
         this.cwd = cwd;
@@ -819,20 +820,39 @@ if (!NS.commitGraph) {
         portal?.remove();
         portal = null;
       };
-      const showT3 = (ready, view) => {
+      // The section takes stable props (new objects would reset its scroll and annotations), so each view's are built once.
+      const sections = {};
+      const sectionFor = (ready, view) => {
+        if (sections[view]) return sections[view];
         const { lib, fileDiff } = ready;
+        const ctx = this.t3 ?? {};
         const themeType = document.documentElement.classList.contains("dark") ? "dark" : "light";
-        const element = () =>
-          this.react.jsx(lib.FileDiff, {
-            fileDiff,
-            options: { diffStyle: "unified", lineDiffType: "none", overflow: "scroll", theme: lib.themeName?.(themeType), themeType, disableFileHeader: true, expandUnchanged: view === "full" },
-          });
+        const files = [{ fileKey: `t3cg:${target}:${file.path}`, filePath: file.path, fileDiff, fileVersion: `${target}:${file.path}`, collapsed: false }];
+        const props = {
+          environmentId: ctx.environmentId,
+          projectId: ctx.projectId,
+          composerDraftTarget: ctx.composerDraftTarget,
+          codeViewKey: `t3cg:${target}:${file.path}:${view}`,
+          sectionId: `commit-graph:${target}`,
+          sectionTitle: isUncommitted ? "Uncommitted changes" : `Commit ${short(d.hash)}`,
+          files,
+          pendingFiles: [],
+          className: "h-full min-h-0 overflow-auto",
+          renderHeaderFilenameSuffix: () => null,
+          renderHeaderPrefix: () => null,
+          onRevealSearchMatch: () => {},
+          options: { diffStyle: "unified", lineDiffType: "none", overflow: "scroll", theme: lib.themeName?.(themeType), themeType, disableFileHeader: true, expandUnchanged: view === "full" },
+        };
+        return (sections[view] = () => this.react.jsx(lib.Section, props));
+      };
+      const showT3 = (ready, view) => {
+        const element = sectionFor(ready, view);
         if (!portal) {
           body.innerHTML = "";
           const host = document.createElement("div");
           host.className = "t3cg-t3diff";
           body.appendChild(host);
-          portal = this.mountReact(host, lib.createPortal, element);
+          portal = this.mountReact(host, ready.lib.createPortal, element);
         } else portal.update(element);
         body.scrollTop = 0;
       };
@@ -1576,21 +1596,21 @@ if (!NS.commitGraph) {
 
   // ---- T3's own diff renderer ---------------------------------------------------------
   // The optional patches in patches.cjs add export aliases to T3's diff chunks; here we import() those same
-  // modules (the file names are hashed, so the loader lists them) and render T3's FileDiff React component
-  // through a portal from the surface's React tree. Anything missing leaves t3diff null and the plain view is used.
+  // modules (the file names are hashed, so the loader lists them) and render T3's diff section component
+  // (the one its Changes panel uses) through a portal from the surface's React tree. Anything missing leaves t3diff null and the plain view is used.
   let t3diffPromise = null;
   function loadT3Diff() {
     t3diffPromise ??= (async () => {
       try {
         const names = await (await fetch("/__t3mod/chunks.json", { cache: "no-store" })).json();
         const find = (re) => names.find((n) => re.test(n));
-        const [fd, dr, rd] = await Promise.all([find(/^FileDiff-/), find(/^diffRendering-/), find(/^react-dom-/)].map((n) => import(`/assets/${n}`)));
-        const FileDiff = fd.__t3mod_FileDiff;
+        const [dp, dr, rd] = await Promise.all([find(/^DiffPanel-/), find(/^diffRendering-/), find(/^react-dom-/)].map((n) => import(`/assets/${n}`)));
+        const Section = dp.__t3mod_DiffSection;
         const parse = dr.__t3mod_parseDiffFromFile;
         const themeName = dr.__t3mod_themeName;
         const dom = (rd.t ?? Object.values(rd)[0])?.();
-        if (typeof FileDiff !== "function" || typeof parse !== "function" || typeof dom?.createPortal !== "function") throw new Error("exports missing");
-        return { FileDiff, parse, themeName, createPortal: dom.createPortal };
+        if (typeof Section !== "function" || typeof parse !== "function" || typeof dom?.createPortal !== "function") throw new Error("exports missing");
+        return { Section, parse, themeName, createPortal: dom.createPortal };
       } catch (e) {
         console.debug("[t3mod] commit-graph: T3 diff renderer unavailable, using the plain diff", e);
         return null;
@@ -1615,7 +1635,7 @@ if (!NS.commitGraph) {
       };
     }, []);
     R.useEffect(() => {
-      view.current?.setProps({ cwd: props.workspaceRoot, visible: props.visible, threadRef: props.threadRef });
+      view.current?.setProps({ cwd: props.workspaceRoot, visible: props.visible, threadRef: props.threadRef, t3: { environmentId: props.environmentId, projectId: props.projectId, composerDraftTarget: props.composerDraftTarget } });
     });
     return props.jsx("div", { ref, className: "t3cg-host", "data-t3mod": "commit-graph", children: portals.map((p) => p.render()) });
   }

@@ -150,23 +150,25 @@ module.exports = [
         src,
         /case`pull-requests`:\{let ([\w$]+);return [\w$]+\[\d+\]===([\w$]+)\?/,
         (m) =>
-          `case\`commit-graph\`:return ${API}?.Surface?(0,${j}.jsx)(${API}.Surface,{React:${react},jsx:${j}.jsx,threadRef:${ref},surface:${surface},visible:${visible},environmentId:${props}.environmentId,workspaceRoot:${props}.files?.workspaceRoot??null,projectName:${props}.files?.projectName??null}):null;${m}`,
+          `case\`commit-graph\`:return ${API}?.Surface?(0,${j}.jsx)(${API}.Surface,{React:${react},jsx:${j}.jsx,threadRef:${ref},surface:${surface},visible:${visible},environmentId:${props}.environmentId,projectId:${props}.files?.projectId,composerDraftTarget:${props}.composerDraftTarget,workspaceRoot:${props}.files?.workspaceRoot??null,projectName:${props}.files?.projectName??null}):null;${m}`,
         "chat-render",
       );
     },
   },
 
-  // ---- T3's own diff renderer (optional: the plain diff view is the fallback) --------
-  // Each patch appends one export alias to a chunk T3 already ships, so the runtime can import()
-  // the same module instance T3's diff panel uses. A miss only means the plain view stays.
+  // ---- T3's own diff section (optional: the plain diff view is the fallback) --------
+  // Each patch appends an export alias to a chunk T3 already ships, so the runtime can import() the
+  // same module instance T3's diff panel uses. A miss only means the plain view stays.
   {
-    id: "diff-component",
+    // The diff panel's file section: syntax highlighting, folded unchanged lines, the "+" gutter
+    // button and the inline comment editor that adds review comments to the chat composer.
+    id: "diff-section",
     optional: true,
-    file: /^FileDiff-[\w-]+\.js$/,
+    file: /^DiffPanel-[\w-]+\.js$/,
     apply: (src) => {
-      const m = [...src.matchAll(/function ([\w$]+)\(\{fileDiff:[\w$]+,options:[\w$]+,editorOptions:/g)];
-      if (m.length !== 1) throw new Error(`diff-component: anchor matched ${m.length}x (want 1)`);
-      return `${src}\nexport{${m[0][1]} as __t3mod_FileDiff};`;
+      const m = [...src.matchAll(/function ([\w$]+)\(e\)\{let t=\(0,[\w$]+\.c\)\(\d+\),\{environmentId:[\w$]+,projectId:[\w$]+,codeViewKey:/g)];
+      if (m.length !== 1) throw new Error(`diff-section: anchor matched ${m.length}x (want 1)`);
+      return `${src}\nexport{${m[0][1]} as __t3mod_DiffSection};`;
     },
   },
   {
