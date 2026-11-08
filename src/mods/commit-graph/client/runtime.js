@@ -161,13 +161,16 @@ if (!NS.commitGraph) {
       .slice(0, 2)
       .map((w) => w[0].toUpperCase())
       .join("") || "?";
-  // find, fetch and refresh are VS Code Codicons 0.0.45 (CC BY 4.0, https://github.com/microsoft/vscode-codicons).
+  // find, fetch, pull, push, refresh and menu are VS Code Codicons 0.0.45 (CC BY 4.0, https://github.com/microsoft/vscode-codicons).
   const SVG = {
     branch: `<svg viewBox="0 0 16 16" class="t3cg-ico"><path fill="currentColor" d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>`,
     tag: `<svg viewBox="0 0 16 16" class="t3cg-ico"><path fill="currentColor" d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25zM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>`,
     stash: `<svg viewBox="0 0 16 16" class="t3cg-ico"><path fill="currentColor" d="M2.75 2h10.5c.966 0 1.75.784 1.75 1.75v1.5A1.75 1.75 0 0 1 14 6.79v5.46A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25V6.79A1.75 1.75 0 0 1 1 5.25v-1.5C1 2.784 1.784 2 2.75 2zm.75 5v5.25c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25V7zm-.75-3.5a.25.25 0 0 0-.25.25v1.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-1.5a.25.25 0 0 0-.25-.25zM6 8.75A.75.75 0 0 1 6.75 8h2.5a.75.75 0 0 1 0 1.5h-2.5A.75.75 0 0 1 6 8.75z"/></svg>`,
     find: `<svg viewBox="0 0 16 16" class="t3cg-ico" fill="currentColor"><path d="M10.0195 10.7266C9.06578 11.5217 7.83875 12 6.5 12C3.46243 12 1 9.53757 1 6.5C1 3.46243 3.46243 1 6.5 1C9.53757 1 12 3.46243 12 6.5C12 7.83875 11.5217 9.06578 10.7266 10.0195L13.8535 13.1464C14.0488 13.3417 14.0488 13.6583 13.8535 13.8536C13.6583 14.0488 13.3417 14.0488 13.1464 13.8536L10.0195 10.7266ZM11 6.5C11 4.01472 8.98528 2 6.5 2C4.01472 2 2 4.01472 2 6.5C2 8.98528 4.01472 11 6.5 11C8.98528 11 11 8.98528 11 6.5Z"/></svg>`,
     refresh: `<svg viewBox="0 0 16 16" class="t3cg-ico" fill="currentColor"><path d="M3 8C3 5.23858 5.23858 3 8 3C9.63527 3 11.0878 3.78495 12.0005 5H10C9.72386 5 9.5 5.22386 9.5 5.5C9.5 5.77614 9.72386 6 10 6H12.8904C12.8973 6.00014 12.9041 6.00014 12.911 6H13C13.2761 6 13.5 5.77614 13.5 5.5V2.5C13.5 2.22386 13.2761 2 13 2C12.7239 2 12.5 2.22386 12.5 2.5V4.03138C11.4009 2.78613 9.79253 2 8 2C4.68629 2 2 4.68629 2 8C2 11.3137 4.68629 14 8 14C11.1301 14 13.6999 11.6035 13.9756 8.54488C14.0003 8.26985 13.7975 8.0268 13.5225 8.00202C13.2474 7.97723 13.0044 8.1801 12.9796 8.45512C12.75 11.003 10.6079 13 8 13C5.23858 13 3 10.7614 3 8Z"/></svg>`,
+    pull: `<svg viewBox="0 0 16 16" class="t3cg-ico" fill="currentColor"><path d="M4.85 6.15C4.755 6.05 4.627 6 4.5 6C4.372 6 4.245 6.05 4.15 6.15C4.05 6.245 4 6.373 4 6.5C4 6.627 4.05 6.755 4.15 6.85L7.15 9.85C7.245 9.95 7.372 10 7.5 10C7.628 10 7.755 9.95 7.85 9.85L10.85 6.85C10.95 6.755 11 6.628 11 6.5C11 6.372 10.95 6.245 10.85 6.15C10.755 6.05 10.627 6 10.5 6C10.373 6 10.245 6.05 10.15 6.15L8 8.29V1.5C8 1.22 7.78 1 7.5 1C7.22 1 7 1.22 7 1.5V8.29L4.85 6.15Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M9.95 13H12.5C12.78 13 13 13.22 13 13.5C13 13.78 12.78 14 12.5 14H9.95C9.72 15.14 8.71 16 7.5 16C6.29 16 5.28 15.14 5.05 14H2.5C2.22 14 2 13.78 2 13.5C2 13.22 2.22 13 2.5 13H5.05C5.28 11.86 6.29 11 7.5 11C8.71 11 9.72 11.86 9.95 13ZM6.09 14C6.29 14.58 6.85 15 7.5 15C8.15 15 8.71 14.58 8.91 14C8.97 13.84 9 13.68 9 13.5C9 13.32 8.97 13.16 8.91 13C8.71 12.42 8.15 12 7.5 12C6.85 12 6.29 12.42 6.09 13C6.03 13.16 6 13.32 6 13.5C6 13.68 6.03 13.84 6.09 14Z"/></svg>`,
+    push: `<svg viewBox="0 0 16 16" class="t3cg-ico" fill="currentColor"><path d="M4.85 4.85C4.755 4.95 4.627 5 4.5 5C4.372 5 4.245 4.95 4.15 4.85C4.05 4.755 4 4.627 4 4.5C4 4.373 4.05 4.245 4.15 4.15L7.15 1.15C7.245 1.05 7.372 1 7.5 1C7.628 1 7.755 1.05 7.85 1.15L10.85 4.15C10.95 4.245 11 4.372 11 4.5C11 4.628 10.95 4.755 10.85 4.85C10.755 4.95 10.627 5 10.5 5C10.373 5 10.245 4.95 10.15 4.85L8 2.71V9.5C8 9.78 7.78 10 7.5 10C7.22 10 7 9.78 7 9.5V2.71L4.85 4.85Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M9.95 13H12.5C12.78 13 13 13.22 13 13.5C13 13.78 12.78 14 12.5 14H9.95C9.72 15.14 8.71 16 7.5 16C6.29 16 5.28 15.14 5.05 14H2.5C2.22 14 2 13.78 2 13.5C2 13.22 2.22 13 2.5 13H5.05C5.28 11.86 6.29 11 7.5 11C8.71 11 9.72 11.86 9.95 13ZM6.09 14C6.29 14.58 6.85 15 7.5 15C8.15 15 8.71 14.58 8.91 14C8.97 13.84 9 13.68 9 13.5C9 13.32 8.97 13.16 8.91 13C8.71 12.42 8.15 12 7.5 12C6.85 12 6.29 12.42 6.09 13C6.03 13.16 6 13.32 6 13.5C6 13.68 6.03 13.84 6.09 14Z"/></svg>`,
+    menu: `<svg viewBox="0 0 16 16" class="t3cg-ico" fill="currentColor"><path d="M5 8C5 8.55229 4.55228 9 4 9C3.44772 9 3 8.55229 3 8C3 7.44772 3.44772 7 4 7C4.55228 7 5 7.44772 5 8ZM9 8C9 8.55229 8.55229 9 8 9C7.44772 9 7 8.55229 7 8C7 7.44772 7.44772 7 8 7C8.55229 7 9 7.44772 9 8ZM12 9C12.5523 9 13 8.55229 13 8C13 7.44772 12.5523 7 12 7C11.4477 7 11 7.44772 11 8C11 8.55229 11.4477 9 12 9Z"/></svg>`,
     fetch: `<svg viewBox="0 0 16 16" class="t3cg-ico" fill="currentColor"><path d="M7.5 3C7.776 3 8 2.776 8 2.5V1.5C8 1.224 7.776 1 7.5 1C7.224 1 7 1.224 7 1.5V2.5C7 2.776 7.224 3 7.5 3Z"/><path d="M7.5 10C7.372 10 7.245 9.95 7.15 9.85L4.15 6.85C4.05 6.755 4 6.628 4 6.5C4 6.372 4.05 6.245 4.15 6.15C4.245 6.05 4.373 6 4.5 6C4.627 6 4.755 6.05 4.85 6.15L7 8.29V7.5C7 7.22 7.22 7 7.5 7C7.78 7 8 7.22 8 7.5V8.29L10.15 6.15C10.245 6.05 10.372 6 10.5 6C10.628 6 10.755 6.05 10.85 6.15C10.95 6.245 11 6.373 11 6.5C11 6.627 10.95 6.755 10.85 6.85L7.85 9.85C7.755 9.95 7.628 10 7.5 10Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M9.95 13H12.5C12.78 13 13 13.22 13 13.5C13 13.78 12.78 14 12.5 14H9.95C9.72 15.14 8.71 16 7.5 16C6.29 16 5.28 15.14 5.05 14H2.5C2.22 14 2 13.78 2 13.5C2 13.22 2.22 13 2.5 13H5.05C5.28 11.86 6.29 11 7.5 11C8.71 11 9.72 11.86 9.95 13ZM7.5 15C8.15 15 8.71 14.58 8.91 14C8.97 13.84 9 13.68 9 13.5C9 13.32 8.97 13.16 8.91 13C8.71 12.42 8.15 12 7.5 12C6.85 12 6.29 12.42 6.09 13C6.03 13.16 6 13.32 6 13.5C6 13.68 6.03 13.84 6.09 14C6.29 14.58 6.85 15 7.5 15Z"/><path d="M8 5.5C8 5.776 7.776 6 7.5 6C7.224 6 7 5.776 7 5.5V4.5C7 4.224 7.224 4 7.5 4C7.776 4 8 4.224 8 4.5V5.5Z"/></svg>`,
     close: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M18 6 6 18M6 6l12 12"/></svg>`,
     copy: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-ico-copy"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></g></svg>`,
@@ -280,6 +283,25 @@ if (!NS.commitGraph) {
   }
 
   // ---- dialog -----------------------------------------------------------------------
+  // Close a popover on an outside mousedown or Escape. Clicks on its own button are left to the button.
+  function dismissable(dd, btn) {
+    const close = () => {
+      dd.remove();
+      document.removeEventListener("mousedown", away, true);
+    };
+    const away = (e) => {
+      if (!dd.isConnected) return document.removeEventListener("mousedown", away, true);
+      if (!dd.contains(e.target) && !btn.contains(e.target)) close();
+    };
+    document.addEventListener("mousedown", away, true);
+    dd.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close();
+      }
+    });
+  }
+
   function dialog(root, { title, message, inputs = [], action = "OK", destructive = false, cancel = "Cancel", wide = false }) {
     return new Promise((resolve) => {
       const overlay = document.createElement("div");
@@ -363,13 +385,15 @@ if (!NS.commitGraph) {
           <div class="t3cg-toolbar">
             <div class="t3cg-repo"><span class="t3cg-repo-name"></span></div>
             <button type="button" class="t3cg-dd-btn" data-act="branches" title="Branches" aria-label="Branches"><span class="t3cg-muted t3cg-dd-ico">${SVG.branch}</span><span class="t3cg-dd-label">All</span>${SVG.chevron}</button>
-            <label class="t3cg-check t3cg-toolbar-check"><input type="checkbox" data-act="remotes"/> <span>Show Remote Branches</span></label>
             <div class="t3cg-state"></div>
             <div class="t3cg-spacer"></div>
             <span class="t3cg-status"></span>
             <button type="button" class="t3cg-icon-btn" data-act="find" title="Find (Ctrl+F)">${SVG.find}</button>
             <button type="button" class="t3cg-icon-btn" data-act="fetch" title="Fetch from remote(s)">${SVG.fetch}</button>
+            <button type="button" class="t3cg-icon-btn" data-act="pull" title="Pull">${SVG.pull}</button>
+            <button type="button" class="t3cg-icon-btn" data-act="push" title="Push">${SVG.push}</button>
             <button type="button" class="t3cg-icon-btn" data-act="refresh" title="Refresh">${SVG.refresh}</button>
+            <button type="button" class="t3cg-icon-btn" data-act="menu" title="More actions">${SVG.menu}</button>
           </div>
           <div class="t3cg-findbar" hidden>
             <input type="text" spellcheck="false" placeholder="Find commits (message, hash, author, branch)"/>
@@ -390,7 +414,6 @@ if (!NS.commitGraph) {
       this.$ = (sel) => this.root.querySelector(sel);
       this.tbody = this.$("tbody");
       this.scroller = this.$(".t3cg-scroll");
-      this.$("[data-act=remotes]").checked = this.prefs.showRemote !== false;
       // Hover card: one element reused for every commit. It lives on <body> so it can sit
       // outside the panel, to the left of the hovered row (the mirror of VS Code's Git Graph).
       this.card = document.createElement("div");
@@ -866,20 +889,62 @@ if (!NS.commitGraph) {
         this.expanded = null;
         this.load();
       });
-      const away = (e) => {
-        if (!dd.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
-          dd.remove();
-          document.removeEventListener("mousedown", away, true);
-        }
-      };
-      document.addEventListener("mousedown", away, true);
-      dd.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          dd.remove();
-          document.removeEventListener("mousedown", away, true);
-        }
+      dismissable(dd, btn);
+    }
+
+    // "…" menu: view options that don't need a place in the toolbar.
+    openMoreMenu(btn) {
+      const open = this.root.querySelector(".t3cg-menu");
+      this.root.querySelector(".t3cg-dd")?.remove();
+      if (open) return; // second click on the button closes it
+      const dd = document.createElement("div");
+      dd.className = "t3cg-dd t3cg-menu";
+      dd.innerHTML = `<div class="t3cg-dd-list">
+          <label class="t3cg-dd-opt"><input type="checkbox" data-act="remotes" ${this.prefs.showRemote !== false ? "checked" : ""}/> <span>Show Remote Branches</span></label>
+        </div>`;
+      const r = btn.getBoundingClientRect();
+      const rr = this.root.getBoundingClientRect();
+      dd.style.right = `${rr.right - r.right}px`;
+      dd.style.top = `${r.bottom - rr.top + 4}px`;
+      this.root.appendChild(dd);
+      dd.querySelector("input")?.focus();
+      dismissable(dd, btn);
+    }
+
+    // Toolbar pull: the current branch from its upstream.
+    async pullCurrent() {
+      const br = this.currentBranch;
+      const head = this.data?.refs.heads.find((h) => h.name === br);
+      if (!br) return dialog(this.root, { message: "Check out a branch to pull into it.", action: null, cancel: "OK" });
+      if (!head?.upstream)
+        return dialog(this.root, { message: `<b>${esc(br)}</b> has no upstream branch. Push it with <i>Set Upstream</i> first, or pull a specific remote branch from its context menu.`, action: null, cancel: "OK" });
+      const v = await dialog(this.root, {
+        message: `Pull <b>${esc(head.upstream)}</b> into <b>${esc(br)}</b>?${head.track ? ` <span class="t3cg-muted">(${esc(head.track)})</span>` : ""}`,
+        inputs: [{ type: "select", name: "mode", label: "Mode", value: "merge", options: [{ value: "merge", label: "Merge" }, { value: "ff", label: "Fast-forward only" }, { value: "rebase", label: "Rebase" }] }],
+        action: "Yes, pull",
       });
+      if (v) await this.run("Pull", "pull", { ffOnly: v.mode === "ff", rebase: v.mode === "rebase" });
+    }
+
+    // Toolbar push: the current branch, to its upstream's remote by default.
+    async pushCurrent() {
+      const br = this.currentBranch;
+      if (!br) return dialog(this.root, { message: "Check out a branch to push it.", action: null, cancel: "OK" });
+      if (!this.remotes.length) return dialog(this.root, { message: "This repository has no remotes.", action: null, cancel: "OK" });
+      const head = this.data.refs.heads.find((h) => h.name === br);
+      const sel = this.remoteSelect();
+      const upRemote = head?.upstream && this.remotes.find((r) => head.upstream.startsWith(`${r}/`));
+      if (upRemote) sel.value = upRemote;
+      const v = await dialog(this.root, {
+        message: `Push <b>${esc(br)}</b>${head?.upstream ? ` to <b>${esc(head.upstream)}</b>` : ""}?${head?.track ? ` <span class="t3cg-muted">(${esc(head.track)})</span>` : ""}`,
+        inputs: [
+          sel,
+          { type: "checkbox", name: "setUpstream", label: "Set Upstream", value: !head?.upstream },
+          { type: "select", name: "force", label: "Push mode", value: "none", options: [{ value: "none", label: "Normal" }, { value: "lease", label: "Force With Lease" }, { value: "force", label: "Force" }] },
+        ],
+        action: "Yes, push",
+      });
+      if (v) await this.run("Push", "pushBranch", { name: br, remote: v.remote, setUpstream: v.setUpstream, force: v.force });
     }
 
     // ---- actions
@@ -1301,6 +1366,9 @@ if (!NS.commitGraph) {
         if (act === "find-next") return this.stepFind(1);
         if (act === "find-prev") return this.stepFind(-1);
         if (act === "branches") return this.openBranchDropdown(t.closest("[data-act]"));
+        if (act === "menu") return this.openMoreMenu(t.closest("[data-act]"));
+        if (act === "pull") return this.pullCurrent();
+        if (act === "push") return this.pushCurrent();
         if (act === "more") {
           this.maxCommits += PAGE;
           return this.load();

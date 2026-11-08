@@ -86,7 +86,6 @@
 .t3cg-chev.t3cg-collapsed { transform: rotate(-90deg); }
 .t3cg-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .t3cg-check input { accent-color: var(--primary); margin: 0; }
-.t3cg-toolbar-check { color: var(--t3cg-muted); }
 .t3cg-status { color: var(--t3cg-muted); font-size: 12px; }
 .t3cg-state { display: inline-flex; align-items: center; gap: 6px; }
 .t3cg-state-pill {
@@ -415,6 +414,7 @@
   outline: none;
 }
 .t3cg-dd-list { overflow: auto; padding: 4px; }
+.t3cg-menu { width: auto; min-width: 200px; }
 .t3cg-dd-opt { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .t3cg-dd-opt[hidden] { display: none; }
 .t3cg-dd-opt:hover { background: var(--t3cg-hover); }
@@ -466,6 +466,4 @@
 @container t3cg (max-width: 760px) {
   .t3cg-details { flex-direction: column; height: auto; max-height: 460px; }
   .t3cg-details-files { flex: 1 1 auto; min-height: 120px; padding-right: 8px; }
-  .t3cg-toolbar-check span { display: none; }
-  .t3cg-toolbar-check::after { content: "Remotes"; color: var(--t3cg-muted); }
 }
