@@ -93,6 +93,8 @@ if (!NS.core) {
   const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
   const CLOSE = svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
   const REFRESH = svg('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>');
+  const ARROW_R = svg('<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>');
+  const ARROW_L = svg('<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>');
   const LOCK = svg('<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>');
   const FOLDER = svg('<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>');
   let styleLoaded = false;
@@ -153,7 +155,7 @@ if (!NS.core) {
 
     const item = (m) => {
       const bad = m.enabled && m.ok === false;
-      return `<button class="t3m-item${st.selected === m.id ? " t3m-sel" : ""}${bad ? " t3m-bad" : ""}" data-id="${esc(m.id)}">
+      const card = `<button class="t3m-item${st.selected === m.id ? " t3m-sel" : ""}${bad ? " t3m-bad" : ""}" data-id="${esc(m.id)}">
         <span class="t3m-name">${esc(m.name)}</span>
         ${m.version ? `<span class="t3m-ver">${esc(m.version)}</span>` : ""}
         ${m.builtin ? `<span class="t3m-tag">${LOCK} built in</span>` : ""}
@@ -161,6 +163,12 @@ if (!NS.core) {
         ${bad ? '<span class="t3m-tag t3m-tag-bad">not active</span>' : ""}
         ${m.description ? `<span class="t3m-desc">${esc(m.description)}</span>` : ""}
       </button>`;
+      // Quick move: loaded cards get an arrow to their right (unload), available cards one to their left (load).
+      const label = m.enabled ? "Unload" : "Load";
+      const arrow = m.builtin
+        ? '<span class="t3m-arrow-gap"></span>'
+        : `<button class="t3m-iconbtn t3m-arrow" data-act="toggle" data-id="${esc(m.id)}" title="${label} ${esc(m.name)}" aria-label="${label} ${esc(m.name)}" ${st.busy ? "disabled" : ""}>${m.enabled ? ARROW_R : ARROW_L}</button>`;
+      return `<div class="t3m-row">${m.enabled ? card + arrow : arrow + card}</div>`;
     };
 
     function render() {

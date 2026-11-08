@@ -92,13 +92,17 @@
 .t3m-count { margin-left: 4px; color: var(--t3m-muted); font-weight: 400; }
 .t3m-list { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; overflow: auto; padding: 0 24px 16px; }
 
-.t3m-item {
+.t3m-row { display: flex; flex: none; align-items: center; gap: 8px; }
+.t3m-arrow, .t3m-arrow-gap { flex: none; }
+.t3m-arrow-gap { width: 28px; }
+.t3m-arrow:disabled { opacity: 0.4; cursor: default; }
+.t3m-row .t3m-item {
   display: flex;
-  flex: none;
+  flex: 1;
+  min-width: 0;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 2px 8px;
-  width: 100%;
   padding: 10px 14px;
   border: 1px solid var(--t3m-card-border);
   border-radius: 12px;
