@@ -326,6 +326,39 @@ async function fileDiff(root, p) {
   return { diff: out.length > DIFF_LIMIT ? out.slice(0, DIFF_LIMIT) : out, truncated: out.length > DIFF_LIMIT };
 }
 
+/** The whole file at a commit (or the working-tree file for hash "*"), for the diff view's Full mode. */
+async function fileContent(root, p) {
+  const file = relPath(p.path);
+  let text;
+  if (p.hash === "*") {
+    let real;
+    let rootReal;
+    try {
+      [real, rootReal] = await Promise.all([fs.promises.realpath(path.join(root, file)), fs.promises.realpath(root)]);
+    } catch {
+      return { missing: true };
+    }
+    if (real !== rootReal && !real.startsWith(rootReal + path.sep)) throw new UserError("invalid path");
+    const st = await fs.promises.stat(real);
+    if (!st.isFile()) return { missing: true };
+    const fh = await fs.promises.open(real, "r");
+    try {
+      const buf = Buffer.alloc(Math.min(st.size, DIFF_LIMIT));
+      await fh.read(buf, 0, buf.length, 0);
+      text = buf.toString("utf8");
+    } finally {
+      await fh.close();
+    }
+    if (st.size > DIFF_LIMIT) return { content: text.includes("\0") ? null : text, binary: text.includes("\0"), truncated: true };
+  } else {
+    const r = await git(root, ["show", `${hash(p.hash)}:${file}`], { allowFail: true, maxBuffer: DIFF_LIMIT * 4 });
+    if (r.code !== 0) return { missing: true };
+    text = r.stdout;
+  }
+  if (text.includes("\0")) return { binary: true };
+  return text.length > DIFF_LIMIT ? { content: text.slice(0, DIFF_LIMIT), truncated: true } : { content: text };
+}
+
 async function fingerprint(root) {
   const dir = await gitDir(root);
   const [r, head, st, stashes] = await Promise.all([
@@ -484,6 +517,7 @@ const reads = {
   details,
   uncommittedDetails,
   fileDiff,
+  fileContent,
   fingerprint,
 };
 

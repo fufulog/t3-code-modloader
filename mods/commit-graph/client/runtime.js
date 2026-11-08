@@ -166,6 +166,8 @@ if (!NS.commitGraph) {
     copy: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-ico-copy"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></g></svg>`,
     check: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-ico-check"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M20 6 9 17l-5-5"/></svg>`,
     back: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 12H5m7 7-7-7 7-7"/></svg>`,
+    diff: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v14M5 10h14M5 21h14"/></svg>`,
+    file: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8"/></svg>`,
     up: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m18 15-6-6-6 6"/></svg>`,
     down: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>`,
     chevron: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-chev"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>`,
@@ -766,13 +768,19 @@ if (!NS.commitGraph) {
       overlay.tabIndex = -1;
       const title = `${esc(file.path)}${file.oldPath && file.oldPath !== file.path ? ` <span class="t3cg-muted">(renamed from ${esc(file.oldPath)})</span>` : ""}`;
       overlay.innerHTML = `<div class="t3cg-diff-head"><button type="button" class="t3cg-icon-btn" data-act="close" title="Back (Escape)" aria-label="Back">${SVG.back}</button><span class="t3cg-st-${esc(file.status)} t3cg-st">${esc(STATUS_LETTER[file.status] ?? file.status)}</span><span class="t3cg-diff-title">${title}</span>
-        <span class="t3cg-muted t3cg-mono">${isUncommitted ? "Uncommitted" : `${esc(short(d.comparedTo ?? ""))}${d.comparedTo ? " ↔ " : ""}${esc(short(d.hash))}`}</span></div>
+        <span class="t3cg-muted t3cg-mono">${isUncommitted ? "Uncommitted" : `${esc(short(d.comparedTo ?? ""))}${d.comparedTo ? " ↔ " : ""}${esc(short(d.hash))}`}</span>
+        <div class="t3cg-spacer"></div>
+        <div class="t3cg-seg" role="group" aria-label="View"><button type="button" class="t3cg-icon-btn t3cg-on" data-view="diff" title="Diff" aria-label="Diff" aria-pressed="true">${SVG.diff}</button><button type="button" class="t3cg-icon-btn" data-view="full" title="Full file" aria-label="Full file" aria-pressed="false">${SVG.file}</button></div></div>
         <div class="t3cg-diff-body"><div class="t3cg-muted" style="padding:12px">Loading diff…</div></div>`;
       const close = () => {
         overlay.remove();
         this.root.focus();
       };
-      overlay.addEventListener("click", (e) => e.target.closest("[data-act=close]") && close());
+      overlay.addEventListener("click", (e) => {
+        if (e.target.closest("[data-act=close]")) return close();
+        const v = e.target.closest("[data-view]")?.dataset.view;
+        if (v) show(v);
+      });
       overlay.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
@@ -781,19 +789,52 @@ if (!NS.commitGraph) {
       });
       this.root.appendChild(overlay);
       overlay.focus();
-      try {
-        const res = await git("fileDiff", {
-          cwd: this.cwd,
-          hash: isUncommitted ? "*" : d.hash,
-          base: isUncommitted ? undefined : d.comparedTo ?? undefined,
-          path: file.path,
-          oldPath: file.oldPath,
-          untracked: isUncommitted && file.status === "U",
-        });
-        overlay.querySelector(".t3cg-diff-body").innerHTML = renderDiff(res.diff) + (res.truncated ? `<div class="t3cg-muted" style="padding:8px">Diff truncated.</div>` : "");
-      } catch (e) {
-        overlay.querySelector(".t3cg-diff-body").innerHTML = `<div class="t3cg-error" style="padding:12px">${esc(e.message)}</div>`;
-      }
+
+      // Diff and Full are fetched on first use and kept, so switching back and forth is instant.
+      const body = overlay.querySelector(".t3cg-diff-body");
+      const cache = {};
+      const target = isUncommitted ? "*" : d.hash;
+      const load = {
+        diff: async () => {
+          const res = await git("fileDiff", {
+            cwd: this.cwd,
+            hash: target,
+            base: isUncommitted ? undefined : d.comparedTo ?? undefined,
+            path: file.path,
+            oldPath: file.oldPath,
+            untracked: isUncommitted && file.status === "U",
+          });
+          return renderDiff(res.diff) + (res.truncated ? `<div class="t3cg-muted" style="padding:8px">Diff truncated.</div>` : "");
+        },
+        full: async () => {
+          const res = await git("fileContent", { cwd: this.cwd, hash: target, path: file.path });
+          if (res.missing) return `<div class="t3cg-muted" style="padding:12px">${file.status === "D" ? "This file was deleted here, so there is no full file to show." : "The file is not available in this version."}</div>`;
+          if (res.binary) return `<div class="t3cg-muted" style="padding:12px">Binary file.</div>`;
+          return renderFile(res.content) + (res.truncated ? `<div class="t3cg-muted" style="padding:8px">File truncated.</div>` : "");
+        },
+      };
+      let current = null;
+      const show = async (view) => {
+        current = view;
+        for (const b of overlay.querySelectorAll("[data-view]")) {
+          const on = b.dataset.view === view;
+          b.classList.toggle("t3cg-on", on);
+          b.setAttribute("aria-pressed", String(on));
+        }
+        if (cache[view] === undefined) {
+          body.innerHTML = `<div class="t3cg-muted" style="padding:12px">Loading…</div>`;
+          try {
+            cache[view] = await load[view]();
+          } catch (e) {
+            cache[view] = `<div class="t3cg-error" style="padding:12px">${esc(e.message)}</div>`;
+          }
+        }
+        if (current === view) {
+          body.innerHTML = cache[view];
+          body.scrollTop = 0;
+        }
+      };
+      show("diff");
     }
 
     // ---- find
@@ -1490,6 +1531,13 @@ if (!NS.commitGraph) {
       else if (line !== "" || inHunk) out.push(`<tr><td>${oldN++}</td><td>${newN++}</td><td>${esc(line)}</td></tr>`);
     }
     return `<table class="t3cg-diff">${out.join("")}</table>`;
+  }
+
+  function renderFile(text) {
+    const lines = text.split("\n");
+    if (lines.length && lines[lines.length - 1] === "") lines.pop();
+    if (!lines.length) return `<div class="t3cg-muted" style="padding:12px">The file is empty.</div>`;
+    return `<table class="t3cg-diff t3cg-fullfile">${lines.map((l, i) => `<tr><td></td><td>${i + 1}</td><td>${esc(l)}</td></tr>`).join("")}</table>`;
   }
 
   function Surface(props) {
