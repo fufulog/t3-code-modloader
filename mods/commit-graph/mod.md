@@ -27,3 +27,7 @@ Open it from the **+** menu in the right panel, or from the "Open a surface" lau
 
 - Git runs on this machine, so it works with local projects only.
 - If a T3 update moves the code this mod hooks into, it turns itself off and T3 runs unmodified.
+
+## License
+
+MIT, see the `LICENSE` file in this mod. The bundled file-type icons (Material Icon Theme, MIT) keep their own licence in `client/icons/LICENSE`.
