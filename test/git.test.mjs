@@ -1,7 +1,7 @@
 // Exercises every Commit Graph git op against a throwaway repo + bare remote.
 //   node test/git.test.mjs
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -135,19 +135,13 @@ try {
     eq(u.files.length, 2, "uncommitted files");
     const diff = await op("fileDiff", { hash: "*", path: "new.txt", untracked: true });
     eq(diff.diff.includes("+untracked"), true, "untracked diff");
-    // Full-file mode of the diff view: working tree, a commit, and the refusals
-    eq((await op("fileContent", { hash: "*", path: "a.txt" })).content, "changed\n", "working-tree file");
-    eq((await op("fileContent", { hash: "*", path: "gone.txt" })).missing, true, "missing working-tree file");
-    eq((await op("fileContent", { hash: sh(["rev-parse", "HEAD"]), path: "a.txt" })).content.trim(), sh(["show", "HEAD:a.txt"]).trim(), "committed file");
-    eq((await op("fileContent", { hash: sh(["rev-parse", "HEAD"]), path: "nope.txt" })).missing, true, "file not in commit");
-    writeFileSync(join(cwd, "bin.dat"), Buffer.from([1, 0, 2]));
-    eq((await op("fileContent", { hash: "*", path: "bin.dat" })).binary, true, "binary file");
-    symlinkSync("/etc/hostname", join(cwd, "link.txt"));
-    await rejects(op("fileContent", { hash: "*", path: "link.txt" }), /invalid path/);
-    await rejects(op("fileContent", { hash: "*", path: "../x" }), /invalid path/);
-    await rejects(op("fileContent", { hash: "--help", path: "a.txt" }), /invalid commit hash/);
-    rmSync(join(cwd, "bin.dat"));
-    rmSync(join(cwd, "link.txt"));
+    // Full-file mode of the diff view: the whole file with the changes marked inline
+    const full = await op("fileDiff", { hash: "*", path: "a.txt", full: true });
+    eq(full.diff.includes("+changed"), true, "full diff has the change");
+    eq((full.diff.match(/^@@/gm) ?? []).length, 1, "full diff is a single hunk");
+    const ctxLines = sh(["show", "HEAD:a.txt"]).split("\n").length;
+    eq(full.diff.split("\n").filter((l) => l.startsWith(" ") || l.startsWith("-") || l.startsWith("+")).length >= ctxLines - 1, true, "full diff covers every line");
+    await rejects(op("fileDiff", { hash: "*", path: "../x", full: true }), /invalid path/);
     await op("stashPush", { message: "wip", includeUntracked: true });
     eq((await op("info")).uncommitted, 0, "clean after stash");
     await op("stashApply", { selector: "stash@{0}" });

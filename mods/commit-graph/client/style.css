@@ -458,7 +458,6 @@
 .t3cg-seg { display: inline-flex; gap: 2px; }
 .t3cg-seg .t3cg-icon-btn { width: 24px; height: 24px; }
 .t3cg-seg .t3cg-on { background: var(--t3cg-hover); color: var(--t3cg-fg); }
-.t3cg-fullfile td:nth-child(1) { display: none; }
 .t3cg-diff { border-collapse: collapse; font-family: var(--t3cg-mono); font-size: 12px; line-height: 18px; min-width: 100%; }
 .t3cg-diff td { padding: 0 8px; white-space: pre; vertical-align: top; }
 .t3cg-diff td:nth-child(1), .t3cg-diff td:nth-child(2) {

@@ -309,54 +309,23 @@ async function fileDiff(root, p) {
   const file = relPath(p.path);
   const old = p.oldPath ? relPath(p.oldPath) : null;
   const paths = old && old !== file ? [old, file] : [file];
+  // `full` asks for the whole file with the changes marked inline (one hunk covering every line).
+  const ctx = p.full === true ? ["-U1000000"] : [];
   let out;
   if (p.hash === "*") {
     if (p.untracked) {
       const abs = path.join(root, file);
       const r = await git(root, ["diff", "--no-index", "--", "/dev/null", abs], { allowFail: true });
       out = r.stdout.replace(abs, file);
-    } else out = (await git(root, ["diff", "-M", "HEAD", "--", ...paths], { maxBuffer: DIFF_LIMIT * 4 })).stdout;
+    } else out = (await git(root, ["diff", "-M", ...ctx, "HEAD", "--", ...paths], { maxBuffer: DIFF_LIMIT * 4 })).stdout;
   } else {
     const h = hash(p.hash);
     const base = p.base ? hash(p.base) : null;
     out = base
-      ? (await git(root, ["diff", "-M", base, h, "--", ...paths], { maxBuffer: DIFF_LIMIT * 4 })).stdout
-      : (await git(root, ["show", "-M", "--format=", h, "--", ...paths], { maxBuffer: DIFF_LIMIT * 4 })).stdout;
+      ? (await git(root, ["diff", "-M", ...ctx, base, h, "--", ...paths], { maxBuffer: DIFF_LIMIT * 4 })).stdout
+      : (await git(root, ["show", "-M", ...ctx, "--format=", h, "--", ...paths], { maxBuffer: DIFF_LIMIT * 4 })).stdout;
   }
   return { diff: out.length > DIFF_LIMIT ? out.slice(0, DIFF_LIMIT) : out, truncated: out.length > DIFF_LIMIT };
-}
-
-/** The whole file at a commit (or the working-tree file for hash "*"), for the diff view's Full mode. */
-async function fileContent(root, p) {
-  const file = relPath(p.path);
-  let text;
-  if (p.hash === "*") {
-    let real;
-    let rootReal;
-    try {
-      [real, rootReal] = await Promise.all([fs.promises.realpath(path.join(root, file)), fs.promises.realpath(root)]);
-    } catch {
-      return { missing: true };
-    }
-    if (real !== rootReal && !real.startsWith(rootReal + path.sep)) throw new UserError("invalid path");
-    const st = await fs.promises.stat(real);
-    if (!st.isFile()) return { missing: true };
-    const fh = await fs.promises.open(real, "r");
-    try {
-      const buf = Buffer.alloc(Math.min(st.size, DIFF_LIMIT));
-      await fh.read(buf, 0, buf.length, 0);
-      text = buf.toString("utf8");
-    } finally {
-      await fh.close();
-    }
-    if (st.size > DIFF_LIMIT) return { content: text.includes("\0") ? null : text, binary: text.includes("\0"), truncated: true };
-  } else {
-    const r = await git(root, ["show", `${hash(p.hash)}:${file}`], { allowFail: true, maxBuffer: DIFF_LIMIT * 4 });
-    if (r.code !== 0) return { missing: true };
-    text = r.stdout;
-  }
-  if (text.includes("\0")) return { binary: true };
-  return text.length > DIFF_LIMIT ? { content: text.slice(0, DIFF_LIMIT), truncated: true } : { content: text };
 }
 
 async function fingerprint(root) {
@@ -517,7 +486,6 @@ const reads = {
   details,
   uncommittedDetails,
   fileDiff,
-  fileContent,
   fingerprint,
 };
 

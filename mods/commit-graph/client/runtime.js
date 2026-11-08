@@ -790,29 +790,23 @@ if (!NS.commitGraph) {
       this.root.appendChild(overlay);
       overlay.focus();
 
-      // Diff and Full are fetched on first use and kept, so switching back and forth is instant.
+      // Diff and Full (the whole file, changes marked inline) are fetched on first use and kept, so switching back and forth is instant.
       const body = overlay.querySelector(".t3cg-diff-body");
       const cache = {};
       const target = isUncommitted ? "*" : d.hash;
-      const load = {
-        diff: async () => {
-          const res = await git("fileDiff", {
-            cwd: this.cwd,
-            hash: target,
-            base: isUncommitted ? undefined : d.comparedTo ?? undefined,
-            path: file.path,
-            oldPath: file.oldPath,
-            untracked: isUncommitted && file.status === "U",
-          });
-          return renderDiff(res.diff) + (res.truncated ? `<div class="t3cg-muted" style="padding:8px">Diff truncated.</div>` : "");
-        },
-        full: async () => {
-          const res = await git("fileContent", { cwd: this.cwd, hash: target, path: file.path });
-          if (res.missing) return `<div class="t3cg-muted" style="padding:12px">${file.status === "D" ? "This file was deleted here, so there is no full file to show." : "The file is not available in this version."}</div>`;
-          if (res.binary) return `<div class="t3cg-muted" style="padding:12px">Binary file.</div>`;
-          return renderFile(res.content) + (res.truncated ? `<div class="t3cg-muted" style="padding:8px">File truncated.</div>` : "");
-        },
+      const load = (full) => async () => {
+        const res = await git("fileDiff", {
+          cwd: this.cwd,
+          hash: target,
+          base: isUncommitted ? undefined : d.comparedTo ?? undefined,
+          path: file.path,
+          oldPath: file.oldPath,
+          untracked: isUncommitted && file.status === "U",
+          full,
+        });
+        return renderDiff(res.diff, { full }) + (res.truncated ? `<div class="t3cg-muted" style="padding:8px">${full ? "File" : "Diff"} truncated.</div>` : "");
       };
+      const loaders = { diff: load(false), full: load(true) };
       let current = null;
       const show = async (view) => {
         current = view;
@@ -824,7 +818,7 @@ if (!NS.commitGraph) {
         if (cache[view] === undefined) {
           body.innerHTML = `<div class="t3cg-muted" style="padding:12px">Loading…</div>`;
           try {
-            cache[view] = await load[view]();
+            cache[view] = await loaders[view]();
           } catch (e) {
             cache[view] = `<div class="t3cg-error" style="padding:12px">${esc(e.message)}</div>`;
           }
@@ -1503,7 +1497,7 @@ if (!NS.commitGraph) {
     }
   }
 
-  function renderDiff(text) {
+  function renderDiff(text, { full = false } = {}) {
     if (!text.trim()) return `<div class="t3cg-muted" style="padding:12px">No textual changes.</div>`;
     const out = [];
     let oldN = 0;
@@ -1517,7 +1511,7 @@ if (!NS.commitGraph) {
           newN = Number(m[2]);
         }
         inHunk = true;
-        out.push(`<tr class="t3cg-d-hunk"><td></td><td></td><td>${esc(line)}</td></tr>`);
+        if (!full) out.push(`<tr class="t3cg-d-hunk"><td></td><td></td><td>${esc(line)}</td></tr>`);
         continue;
       }
       if (!inHunk) {
@@ -1531,13 +1525,6 @@ if (!NS.commitGraph) {
       else if (line !== "" || inHunk) out.push(`<tr><td>${oldN++}</td><td>${newN++}</td><td>${esc(line)}</td></tr>`);
     }
     return `<table class="t3cg-diff">${out.join("")}</table>`;
-  }
-
-  function renderFile(text) {
-    const lines = text.split("\n");
-    if (lines.length && lines[lines.length - 1] === "") lines.pop();
-    if (!lines.length) return `<div class="t3cg-muted" style="padding:12px">The file is empty.</div>`;
-    return `<table class="t3cg-diff t3cg-fullfile">${lines.map((l, i) => `<tr><td></td><td>${i + 1}</td><td>${esc(l)}</td></tr>`).join("")}</table>`;
   }
 
   function Surface(props) {
