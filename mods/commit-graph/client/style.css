@@ -112,6 +112,8 @@
   cursor: pointer;
 }
 .t3cg-icon-btn:hover { background: var(--t3cg-hover); color: var(--t3cg-fg); }
+/* The toolbar gap (10px) is for the branch picker and status; neighbouring icon buttons sit 2px apart. */
+.t3cg-toolbar .t3cg-icon-btn + .t3cg-icon-btn { margin-left: -8px; }
 
 /* ---- find ---- */
 .t3cg-findbar {
