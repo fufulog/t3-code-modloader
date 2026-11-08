@@ -60,26 +60,18 @@ if (!NS.commitGraph) {
   // ---- opener / menu ------------------------------------------------------------
   const opener = { ref: null, store: null };
   let jsxRuntime = null;
-  const ICON_PATHS = [
-    ["path", { d: "M6 3v12" }],
-    ["circle", { cx: 18, cy: 6, r: 3 }],
-    ["circle", { cx: 6, cy: 18, r: 3 }],
-    ["path", { d: "M18 9a9 9 0 0 1-9 9" }],
-  ];
+  // VS Code Codicon "git-branch", the same glyph as the toolbar branch filter.
+  const ICON_PATH = "M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z";
   function Icon(props) {
     const jsx = props?.jsx ?? jsxRuntime;
     if (!jsx) return null;
     return jsx("svg", {
       xmlns: "http://www.w3.org/2000/svg",
-      viewBox: "0 0 24 24",
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: 2,
-      strokeLinecap: "round",
-      strokeLinejoin: "round",
+      viewBox: "0 0 16 16",
+      fill: "currentColor",
       className: props?.className,
       "aria-hidden": true,
-      children: ICON_PATHS.map(([tag, attrs], i) => jsx(tag, attrs, i)),
+      children: jsx("path", { d: ICON_PATH }),
     });
   }
   const launcherItem = {
