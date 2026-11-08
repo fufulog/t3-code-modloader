@@ -90,6 +90,10 @@ if (!NS.core) {
     });
 
   // ---- modal ---------------------------------------------------------------------------
+  const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+  const CLOSE = svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
+  const REFRESH = svg('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>');
+  const FOLDER = svg('<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>');
   let styleLoaded = false;
   const ensureStyle = () => {
     if (styleLoaded) return;
@@ -116,9 +120,9 @@ if (!NS.core) {
         <div class="t3m-head">
           <h2>Mods</h2>
           <span class="t3m-grow"></span>
-          <button class="t3m-btn t3m-ghost" data-act="folder" title="Open the mods folder">Open folder</button>
-          <button class="t3m-btn t3m-ghost" data-act="rescan" title="Look for new mods">Rescan</button>
-          <button class="t3m-x" data-act="close" aria-label="Close">${'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>'}</button>
+          <button class="t3m-iconbtn" data-act="folder" title="Open the mods folder" aria-label="Open the mods folder">${FOLDER}</button>
+          <button class="t3m-iconbtn" data-act="rescan" title="Rescan for new mods" aria-label="Rescan for new mods">${REFRESH}</button>
+          <button class="t3m-iconbtn" data-act="close" title="Close" aria-label="Close">${CLOSE}</button>
         </div>
         <div class="t3m-cols">
           <section class="t3m-col"><h3>Loaded <span class="t3m-count" data-count="loaded"></span></h3><div class="t3m-list" data-list="loaded"></div></section>
