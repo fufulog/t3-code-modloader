@@ -1,9 +1,47 @@
 # t3-modloader
 
-Mods for the T3 Code desktop app (Electron), injected into the app's main process.
-T3 itself is not modified on disk.
+Mods for the T3 Code desktop app (Electron), loaded from a `mods/` folder (folders or zips) and managed from a Mods window inside T3.
+The installer makes one small, reversible patch to T3's entry file; the live injector (below) changes nothing on disk.
 
 The first mod is **Commit Graph**: a Git Graph-style commit graph that opens as a right-panel surface. It sits in "Open a surface" directly below "Pull request" and has no hotkey.
+
+## Installation
+
+Needs Node 22 or newer and a T3 Code desktop install (Linux AppImage or unpacked build; Windows and macOS paths are written but untested).
+
+1. Clone this repo somewhere it will stay. T3 loads the modloader from this folder.
+2. Run the installer:
+
+   ```sh
+   node bin/t3mod-install.mjs            # find T3, patch it, add the launcher
+   ```
+
+   It looks for T3 itself and asks for its folder or `.AppImage` only if it finds none. `--dir PATH` skips the search; `--yes` skips the confirmation and takes the first T3 found. It shows what it will change and asks before doing it.
+3. Quit T3 and start it again. On an AppImage install, start T3 from its desktop entry (the installer repoints it) or run `~/.local/share/t3-modloader/t3code-modded`. Unpacked installs start as usual, and need the installer run again after a T3 update.
+4. Open **Mods** in the sidebar footer, right after Usage. Mods in this repo's `mods/` folder show up there. The first run loads everything found; mods you add later start under Available, so stage them with the arrows and click **Load mods**.
+
+Other commands:
+
+```sh
+node bin/t3mod-install.mjs status     # what is installed
+node bin/t3mod-install.mjs find       # list the T3 installs it can see
+node bin/t3mod-install.mjs uninstall  # undo everything, newest change first
+```
+
+To uninstall from inside T3, use **Remove modloader…** in the Mods window. Both ways restore T3's files, and your mod files stay where they are. If this repo moves, run the installer again; if it is gone, T3 starts unmodified. To try mods without installing, see "Inject into a running T3 (live)" below.
+
+### What the installer does
+
+Flags: `--dir PATH` (a T3 folder or `.AppImage`, skips the search and the prompt), `--yes`, `--force` (patch builds that enforce asar integrity), `--keep-config` (uninstall only: uninstall removes the enabled list in `config.json` unless you pass this).
+
+The installer looks in `PATH`, the T3 updater's download folder, `~/Applications`, `~/Downloads`, `~/.local/bin`, `/opt`, `/usr/lib`, `/usr/share`, macOS `.app` bundles and the Windows `Programs` folders. If nothing is found it asks for the folder. It reads the entry point from T3's `app.asar` and inserts one marked block (`/*t3mod:begin*/…/*t3mod:end*/`) that calls the loader.
+
+- **Unpacked installs** (folder with `resources/app.asar`): `app.asar` is patched in place and the original is kept as `app.asar.t3mod-backup`.
+- **AppImage**: the AppImage itself is never modified. A patched copy is extracted into the data dir (about 600 MB), a `t3code-modded` launcher is written, and desktop entries that ran the AppImage are pointed at it. A new T3 version is re-extracted on its first start.
+- Builds with Electron's `EmbeddedAsarIntegrityValidation` fuse on are refused unless `--force`.
+- Everything it changes is recorded in `install.json` in the config dir (`~/.config/t3-modloader` on Linux). Uninstall restores desktop entries and the asar byte for byte.
+
+The modloader itself is the built-in `core` mod: it owns the Mods button and window, is always loaded and has a lock in the list. **Remove modloader…** in the Mods window unloads every mod, then removes the Mods window and button, then runs the uninstall above.
 
 ## Commit Graph
 
@@ -53,28 +91,6 @@ How it works:
 3. It closes the inspector again.
 
 Before sending the signal, it checks that the process catches SIGUSR1, so the signal can never terminate T3. Run it again after editing a mod; module caches are cleared first.
-
-### Install into T3 (permanent, reversible)
-
-```sh
-node bin/t3mod-install.mjs            # find T3, patch it, add the launcher
-node bin/t3mod-install.mjs status     # what is installed
-node bin/t3mod-install.mjs find       # list the T3 installs it can see
-node bin/t3mod-install.mjs uninstall  # undo everything, newest change first
-```
-
-Flags: `--dir PATH` (a T3 folder or `.AppImage`, skips the search and the prompt), `--yes`, `--force`, `--keep-config`.
-
-The installer looks in `PATH`, the T3 updater's download folder, `~/Applications`, `~/Downloads`, `~/.local/bin`, `/opt`, `/usr/lib`, `/usr/share`, macOS `.app` bundles and the Windows `Programs` folders. If nothing is found it asks for the folder. It reads the entry point from T3's `app.asar` and inserts one marked block (`/*t3mod:begin*/…/*t3mod:end*/`) that calls the loader.
-
-- **Unpacked installs** (folder with `resources/app.asar`): `app.asar` is patched in place and the original is kept as `app.asar.t3mod-backup`.
-- **AppImage**: the AppImage itself is never modified. A patched copy is extracted into the data dir (about 600 MB), a `t3code-modded` launcher is written, and desktop entries that ran the AppImage are pointed at it. A new T3 version is re-extracted on its first start.
-- Builds with Electron's `EmbeddedAsarIntegrityValidation` fuse on are refused unless `--force`.
-- Everything it changes is recorded in `install.json` in the config dir (`~/.config/t3-modloader` on Linux). Uninstall restores desktop entries and the asar byte for byte.
-
-The modloader itself is the built-in `core` mod: it owns the Mods button and window, is always loaded and has a lock in the list. **Remove modloader…** in the Mods window unloads every mod, then removes the Mods window and button, then runs the uninstall above.
-
-Windows and macOS paths are written but untested.
 
 ### Start T3 with mods (legacy inspector launcher)
 
