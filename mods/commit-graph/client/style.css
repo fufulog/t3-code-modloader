@@ -112,8 +112,10 @@
   cursor: pointer;
 }
 .t3cg-icon-btn:hover { background: var(--t3cg-hover); color: var(--t3cg-fg); }
-/* The toolbar gap (10px) is for the branch picker and status; neighbouring icon buttons sit 2px apart. */
-.t3cg-toolbar .t3cg-icon-btn + .t3cg-icon-btn { margin-left: -8px; }
+/* The toolbar gap (10px) is for the branch picker and status; the icon buttons are smaller and touch each other. */
+.t3cg-toolbar .t3cg-icon-btn { width: 22px; height: 22px; }
+.t3cg-toolbar .t3cg-icon-btn .t3cg-ico { width: 12px; height: 12px; }
+.t3cg-toolbar .t3cg-icon-btn + .t3cg-icon-btn { margin-left: -10px; }
 
 /* ---- find ---- */
 .t3cg-findbar {
