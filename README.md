@@ -118,7 +118,7 @@ mods/                 your mods: one folder or one .zip each
 
 ## The Mods button
 
-A **Mods** button sits in the sidebar footer, right after Usage. It opens a modal with **Loaded** on the left and **Available** on the right. Selecting a mod previews its `mod.md`; **Load** / **Unload** applies the change and reloads T3's window (patches are applied as the client loads). **Open folder** opens `mods/`; **Rescan** picks up files you just dropped in.
+A **Mods** button sits in the sidebar footer, right after Usage. It opens a modal with **Loaded** on the left and **Available** on the right. Selecting a mod previews its `mod.md`; The arrow beside a card (or **Load** / **Unload** in the preview) only stages the move; the card jumps to the other column and is tagged "will load" / "will unload". Nothing changes until you click **Load mods** at the bottom, which applies every staged change at once and reloads T3's window once (patches are applied as the client loads). **Discard** drops the staged changes. **Open folder** opens `mods/`; **Rescan** picks up files you just dropped in.
 
 Which mods run is kept in `~/.config/t3-modloader/config.json` (`{ "enabled": [...] }`, or `$T3MOD_CONFIG`). On the first run everything found is enabled. A mod dropped in later starts out **Available**: mods run with full access in T3's main process, so nothing new runs until you load it.
 

@@ -114,7 +114,9 @@ if (!NS.core) {
     if (modal) return modal.focus();
     ensureStyle();
     const lastFocus = document.activeElement;
-    const st = { data: null, selected: null, busy: null, error: null, confirm: false, steps: null };
+    const st = { data: null, selected: null, busy: null, error: null, confirm: false, steps: null, pending: new Map() };
+    // Load/Unload only stage a change; "Load mods" applies all of them at once (one window reload).
+    const want = (m) => (st.pending.has(m.id) ? st.pending.get(m.id) : m.enabled);
 
     const root = document.createElement("div");
     root.className = "t3m-backdrop";
@@ -132,7 +134,7 @@ if (!NS.core) {
           <section class="t3m-col"><h3>Available <span class="t3m-count" data-count="available"></span></h3><div class="t3m-list" data-list="available"></div></section>
         </div>
         <div class="t3m-preview" data-preview></div>
-        <div class="t3m-foot"><span data-foot></span></div>
+        <div class="t3m-foot"><span class="t3m-foot-text" data-foot></span><button class="t3m-btn" data-act="discard" data-pending-only>Discard</button><button class="t3m-btn" data-act="apply" data-pending-only>Load mods</button></div>
       </div>`;
     const dialog = root.firstElementChild;
     const $ = (sel) => root.querySelector(sel);
@@ -155,26 +157,30 @@ if (!NS.core) {
 
     const item = (m) => {
       const bad = m.enabled && m.ok === false;
+      const moved = st.pending.has(m.id);
+      const on = want(m);
       const card = `<button class="t3m-item${st.selected === m.id ? " t3m-sel" : ""}${bad ? " t3m-bad" : ""}" data-id="${esc(m.id)}">
         <span class="t3m-name">${esc(m.name)}</span>
         ${m.version ? `<span class="t3m-ver">${esc(m.version)}</span>` : ""}
         ${m.builtin ? `<span class="t3m-tag">${LOCK} built in</span>` : ""}
         ${m.kind === "zip" ? '<span class="t3m-tag">zip</span>' : ""}
         ${bad ? '<span class="t3m-tag t3m-tag-bad">not active</span>' : ""}
+        ${moved ? `<span class="t3m-tag t3m-tag-pending">${on ? "will load" : "will unload"}</span>` : ""}
         ${m.description ? `<span class="t3m-desc">${esc(m.description)}</span>` : ""}
       </button>`;
       // Quick move: loaded cards get an arrow to their right (unload), available cards one to their left (load).
-      const label = m.enabled ? "Unload" : "Load";
+      const label = on ? "Unload" : "Load";
       const arrow = m.builtin
         ? '<span class="t3m-arrow-gap"></span>'
-        : `<button class="t3m-iconbtn t3m-arrow" data-act="toggle" data-id="${esc(m.id)}" title="${label} ${esc(m.name)}" aria-label="${label} ${esc(m.name)}" ${st.busy ? "disabled" : ""}>${m.enabled ? ARROW_R : ARROW_L}</button>`;
-      return `<div class="t3m-row">${m.enabled ? card + arrow : arrow + card}</div>`;
+        : `<button class="t3m-iconbtn t3m-arrow" data-act="toggle" data-id="${esc(m.id)}" title="${label} ${esc(m.name)}" aria-label="${label} ${esc(m.name)}" ${st.busy ? "disabled" : ""}>${on ? ARROW_R : ARROW_L}</button>`;
+      return `<div class="t3m-row">${on ? card + arrow : arrow + card}</div>`;
     };
 
     function render() {
       const mods = st.data?.mods ?? [];
-      const loaded = mods.filter((m) => m.enabled);
-      const avail = mods.filter((m) => !m.enabled);
+      for (const id of st.pending.keys()) if (!mods.some((m) => m.id === id)) st.pending.delete(id);
+      const loaded = mods.filter(want);
+      const avail = mods.filter((m) => !want(m));
       if (st.selected && !mods.some((m) => m.id === st.selected)) st.selected = null;
       if (!st.selected) st.selected = (loaded[0] ?? avail[0])?.id ?? null;
       $('[data-count="loaded"]').textContent = loaded.length;
@@ -207,7 +213,7 @@ if (!NS.core) {
         const bad = sel.enabled && sel.ok === false;
         const meta = [sel.version && `v${esc(sel.version)}`, sel.author && esc(sel.author), sel.builtin ? "built in" : sel.kind === "zip" ? "zip" : "folder", !sel.builtin && esc(sel.file)].filter(Boolean).join(" · ");
         const problems = sel.problems.length ? `<div class="t3m-problems">${sel.problems.map((p) => `<div>${esc(p)}</div>`).join("")}</div>` : "";
-        const label = st.busy ? (sel.enabled ? "Unloading…" : "Loading…") : sel.enabled ? "Unload" : "Load";
+        const label = want(sel) ? "Unload" : "Load";
         const action = sel.builtin
           ? `<button class="t3m-btn t3m-danger" data-act="confirm-remove">Remove modloader…</button>`
           : `<button class="t3m-btn" data-act="toggle" data-id="${esc(sel.id)}" ${st.busy ? "disabled" : ""}>${label}</button>`;
@@ -220,7 +226,13 @@ if (!NS.core) {
           ${problems}
           <div class="t3m-md">${sel.markdown ? markdown(sel.markdown) : '<p class="t3m-muted">This mod has no mod.md description.</p>'}</div>`;
       }
-      $("[data-foot]").textContent = st.error ? st.error : st.data ? `${st.data.modsDir}  ·  loading or unloading reloads T3` : "";
+      const n = st.pending.size;
+      for (const b of root.querySelectorAll("[data-pending-only]")) b.hidden = !n;
+      const apply = $('[data-act="apply"]');
+      apply.textContent = st.busy === "apply" ? "Loading…" : `Load mods · ${n}`;
+      apply.disabled = !!st.busy;
+      $('[data-act="discard"]').disabled = !!st.busy;
+      $("[data-foot]").textContent = st.error ? st.error : st.data ? (n ? `${n} change${n > 1 ? "s" : ""} not applied yet. Load mods reloads T3.` : `${st.data.modsDir}`) : "";
       $("[data-foot]").classList.toggle("t3m-error", !!st.error);
     }
 
@@ -231,8 +243,11 @@ if (!NS.core) {
       } catch (e) {
         st.error = e.message;
         st.busy = null;
+        render();
+        return false;
       }
       render();
+      return true;
     }
 
     root.addEventListener("mousedown", (e) => {
@@ -269,10 +284,24 @@ if (!NS.core) {
       }
       if (act === "toggle") {
         const mod = st.data?.mods.find((m) => m.id === e.target.closest("[data-id]").dataset.id);
-        if (!mod || st.busy) return;
-        st.busy = mod.id;
+        if (!mod || mod.builtin || st.busy) return;
+        const next = !want(mod);
+        next === mod.enabled ? st.pending.delete(mod.id) : st.pending.set(mod.id, next);
+        return render();
+      }
+      if (act === "discard") {
+        st.pending.clear();
+        return render();
+      }
+      if (act === "apply") {
+        if (!st.pending.size || st.busy) return;
+        st.busy = "apply";
         render();
-        return void call("setEnabled", { id: mod.id, enabled: !mod.enabled });
+        return void call("apply", { changes: Object.fromEntries(st.pending) }).then((ok) => {
+          if (!ok) return;
+          st.pending.clear();
+          render();
+        });
       }
       const id = e.target.closest(".t3m-item")?.dataset.id;
       if (id) {

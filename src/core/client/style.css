@@ -147,7 +147,11 @@
 .t3m-link { text-decoration: underline; text-decoration-color: var(--t3m-muted); }
 .t3m-muted { color: var(--t3m-muted); }
 
-.t3m-foot { flex: none; padding: 8px 24px; border-top: 1px solid var(--t3m-border); color: var(--t3m-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t3m-foot { display: flex; flex: none; align-items: center; gap: 8px; padding: 8px 24px; border-top: 1px solid var(--t3m-border); color: var(--t3m-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t3m-foot-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.t3m-foot .t3m-btn { height: 28px; padding: 0 12px; }
+.t3m-foot [hidden] { display: none; }
+.t3m-tag-pending { background: color-mix(in oklab, var(--foreground) 14%, transparent); color: var(--foreground); }
 .t3m-error, .t3m-foot .t3m-error { color: var(--destructive, #f85149); }
 
 @media (max-width: 639px) { .t3m-cols { grid-template-columns: 1fr; height: 46%; } }

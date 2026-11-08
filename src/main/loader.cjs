@@ -332,7 +332,7 @@ function loaderApi(electron) {
     const inst = installer().status();
     return { modsDir: modsDir(), mods: state().catalog, install: { installed: inst.installed, target: inst.target ?? null } };
   };
-  return {
+  const api = {
     list: view,
     rescan() {
       refreshMods(electron);
@@ -340,15 +340,25 @@ function loaderApi(electron) {
       return view();
     },
     setEnabled(id, on) {
-      const entry = state().catalog.find((m) => m.id === id);
-      if (!entry) throw new Error(`no such mod: ${id}`);
-      if (entry.builtin) throw new Error("the modloader's own UI cannot be unloaded; use Remove modloader");
+      return api.setEnabledMany({ [id]: on });
+    },
+    /** Load and unload several mods at once (`{id: boolean}`): one config write, one reload. */
+    setEnabledMany(changes) {
       const enabled = new Set(state().catalog.filter((m) => m.enabled && !m.builtin).map((m) => m.id));
-      on ? enabled.add(id) : enabled.delete(id);
+      const done = [];
+      for (const [id, on] of Object.entries(changes)) {
+        const entry = state().catalog.find((m) => m.id === id);
+        if (!entry) throw new Error(`no such mod: ${id}`);
+        if (entry.builtin) throw new Error("the modloader's own UI cannot be unloaded; use Remove modloader");
+        if (enabled.has(id) === on) continue;
+        on ? enabled.add(id) : enabled.delete(id);
+        done.push(`${on ? "loaded" : "unloaded"} ${id}`);
+      }
+      if (!done.length) return view();
       writeEnabled(enabled);
       refreshMods(electron);
       setupMain(electron);
-      log(`${on ? "loaded" : "unloaded"} ${id}`);
+      for (const line of done) log(line);
       // Patches apply as chunks are fetched, so the window reloads; let the IPC reply go out first.
       setTimeout(() => reloadWindows(electron), 120);
       return view();
@@ -387,6 +397,7 @@ function loaderApi(electron) {
       return { steps };
     },
   };
+  return api;
 }
 
 function reloadWindows(electron) {

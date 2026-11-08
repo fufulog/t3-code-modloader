@@ -1,6 +1,6 @@
 "use strict";
 // Built-in: the Mods button in the sidebar footer and the modal behind it.
-// The renderer talks to the loader over t3mod:core:ops (list, rescan, setEnabled, remove, openFolder).
+// The renderer talks to the loader over t3mod:core:ops (list, rescan, setEnabled, apply, remove, openFolder).
 module.exports = {
   patches: require("./patches.cjs"),
   main({ ipcMain, isTrustedSender, loader, log }) {
@@ -15,6 +15,11 @@ module.exports = {
           case "setEnabled":
             if (typeof payload.id !== "string" || typeof payload.enabled !== "boolean") throw new Error("bad arguments");
             return { ok: true, data: loader.setEnabled(payload.id, payload.enabled) };
+          case "apply": {
+            const c = payload.changes;
+            if (!c || typeof c !== "object" || Object.values(c).some((v) => typeof v !== "boolean")) throw new Error("bad arguments");
+            return { ok: true, data: loader.setEnabledMany(c) };
+          }
           case "remove":
             return { ok: true, data: loader.removeModloader() };
           case "openFolder":
