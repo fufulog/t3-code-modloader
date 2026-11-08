@@ -382,7 +382,7 @@ if (!NS.commitGraph) {
       this.visible = true;
       this.maxCommits = PAGE;
       this.data = null;
-      this.expanded = null; // { key, details }
+      this.expanded = new Map(); // key -> { key, details, row }; any number of commits can be open
       this.fingerprint = null;
       this.find = { open: false, q: "", matches: [], cur: -1 };
       this.loadSeq = 0;
@@ -458,7 +458,7 @@ if (!NS.commitGraph) {
       if (cwd !== this.cwd) {
         this.cwd = cwd;
         this.maxCommits = PAGE;
-        this.expanded = null;
+        this.expanded.clear();
         this.data = null;
         this.fingerprint = null;
         this.detailCache.clear();
@@ -595,11 +595,11 @@ if (!NS.commitGraph) {
         const labels = refs.map((r) => this.labelHtml(r, g.color)).join("");
         const stashLabel = row.kind === "stash" ? `<span class="t3cg-ref t3cg-ref-stash" data-ref-type="stash">${SVG.stash}<span>${esc(row.selector)}</span></span>` : "";
         const key = row.kind === "uncommitted" ? "*" : row.hash;
-        const cls = ["t3cg-row", merge ? "t3cg-merge" : "", isHead ? "t3cg-head" : "", row.kind === "uncommitted" ? "t3cg-uncommitted" : "", this.expanded?.key === key ? "t3cg-expanded" : ""].filter(Boolean).join(" ");
+        const cls = ["t3cg-row", merge ? "t3cg-merge" : "", isHead ? "t3cg-head" : "", row.kind === "uncommitted" ? "t3cg-uncommitted" : "", this.expanded.has(key) ? "t3cg-expanded" : ""].filter(Boolean).join(" ");
         html.push(`<tr class="${cls}" data-i="${i}">
           <td class="t3cg-c-main"><div class="t3cg-line">${rowSvg(g, row.kind, isHead)}<span class="t3cg-desc">${labels}${stashLabel}<span class="t3cg-subject">${esc(row.subject)}</span>${row.kind === "uncommitted" ? "" : `<span class="t3cg-by">${esc(row.author)}</span>`}</span></div></td>
         </tr>`);
-        if (this.expanded?.key === key) html.push(this.detailsHtml(row, g, lay.width));
+        if (this.expanded.has(key)) html.push(this.detailsHtml(row, g, key));
       });
       if (this.data.hasMore) html.push(`<tr class="t3cg-more"><td colspan="2"><button type="button" class="t3cg-btn" data-act="more">Load More Commits</button></td></tr>`);
       this.tbody.innerHTML = html.join("");
@@ -694,14 +694,17 @@ if (!NS.commitGraph) {
       card.style.top = `${top}px`;
       // In the fallback the card can lie over the open file list: let the pointer through
       // to it, so moving onto the list closes the card instead of keeping it open.
-      const list = this.tbody.querySelector(".t3cg-details")?.getBoundingClientRect();
       const cr = card.getBoundingClientRect();
-      card.classList.toggle("t3cg-card-passthru", !!list && cr.left < list.right && cr.right > list.left && cr.top < list.bottom && cr.bottom > list.top);
+      const overlaps = [...this.tbody.querySelectorAll(".t3cg-details")].some((el) => {
+        const list = el.getBoundingClientRect();
+        return cr.left < list.right && cr.right > list.left && cr.top < list.bottom && cr.bottom > list.top;
+      });
+      card.classList.toggle("t3cg-card-passthru", overlaps);
     }
 
     // ---- files popdown (click a row).
-    detailsHtml(row, g, width) {
-      const d = this.expanded?.details;
+    detailsHtml(row, g, key) {
+      const d = this.expanded.get(key)?.details;
       let body;
       if (!d) body = `<div class="t3cg-muted t3cg-details-loading">Loading…</div>`;
       else if (d.error) body = `<div class="t3cg-error">${esc(d.error)}</div>`;
@@ -717,7 +720,7 @@ if (!NS.commitGraph) {
       }
       // Lanes still open below the commit run down beside the file list; the list starts after them.
       const indent = Math.max(1, lastLane(g.after)) * LANE_W;
-      return `<tr class="t3cg-details-row"><td><div class="t3cg-details-wrap" style="padding-left:${indent + 8}px">${continuationSvg(g.after)}<div class="t3cg-details">${body}</div></div></td></tr>`;
+      return `<tr class="t3cg-details-row" data-key="${esc(key)}"><td><div class="t3cg-details-wrap" style="padding-left:${indent + 8}px">${continuationSvg(g.after)}<div class="t3cg-details" data-key="${esc(key)}">${body}</div></div></td></tr>`;
     }
 
     filesHtml(d) {
@@ -734,34 +737,39 @@ if (!NS.commitGraph) {
       return `<div class="t3cg-file-list">${rows.join("")}</div>`;
     }
 
+    rowIndexByKey(key) {
+      return this.rows.findIndex((r) => (r.kind === "uncommitted" ? "*" : r.hash) === key);
+    }
+
     async toggleDetails(i, opts = {}) {
       const row = this.rows[i];
       const key = row.kind === "uncommitted" ? "*" : row.hash;
-      if (this.expanded?.key === key && !opts.parent) {
-        this.expanded = null;
+      if (this.expanded.has(key) && !opts.parent) {
+        this.expanded.delete(key);
         return this.render();
       }
-      this.expanded = { key, details: null, row };
+      const entry = { key, details: null, row };
+      this.expanded.set(key, entry);
       if (!opts.parent) this.render();
       try {
         const details = row.kind === "uncommitted" ? await git("uncommittedDetails", { cwd: this.cwd }) : await git("details", { cwd: this.cwd, hash: row.hash, parent: opts.parent });
         await iconMapReady;
-        if (this.expanded?.key !== key) return;
-        this.expanded.details = details;
+        if (this.expanded.get(key) !== entry) return;
+        entry.details = details;
       } catch (e) {
-        if (this.expanded?.key !== key) return;
-        this.expanded.details = { error: e.message };
+        if (this.expanded.get(key) !== entry) return;
+        entry.details = { error: e.message };
       }
       this.render();
-      const tr = this.tbody.querySelector(".t3cg-details-row");
+      const tr = [...this.tbody.querySelectorAll(".t3cg-details-row")].find((el) => el.dataset.key === key);
       tr?.scrollIntoView({ block: "nearest" });
     }
 
     // ---- diff viewer
-    async openDiff(file) {
-      const d = this.expanded?.details;
+    async openDiff(file, key) {
+      const d = this.expanded.get(key)?.details;
       if (!d) return;
-      const isUncommitted = this.expanded.key === "*";
+      const isUncommitted = key === "*";
       const overlay = document.createElement("div");
       overlay.className = "t3cg-diff-overlay";
       overlay.tabIndex = -1;
@@ -884,7 +892,7 @@ if (!NS.commitGraph) {
         rp.branches = [...dd.querySelectorAll("input[data-ref]")].filter((x) => x.checked).map((x) => x.dataset.ref);
         if (!rp.branches.length) rp.branches = null;
         savePrefs(this.prefs);
-        this.expanded = null;
+        this.expanded.clear();
         this.load();
       });
       dismissable(dd, btn);
@@ -1319,8 +1327,8 @@ if (!NS.commitGraph) {
       }
     }
 
-    async fileMenu(ev, file) {
-      const d = this.expanded?.details;
+    async fileMenu(ev, file, key) {
+      const d = this.expanded.get(key)?.details;
       if (!d) return;
       const info = this.data.info;
       const abs = `${info.root}/${file.path}`;
@@ -1331,7 +1339,7 @@ if (!NS.commitGraph) {
         { id: "copy-rel", label: "Copy Relative File Path to Clipboard", separatorBefore: true },
         { id: "copy-abs", label: "Copy Absolute File Path to Clipboard" },
       ]);
-      if (id === "diff") this.openDiff(file);
+      if (id === "diff") this.openDiff(file, key);
       else if (id === "open") this.openFile(file);
       else if (id === "copy-rel") copy(file.path);
       else if (id === "copy-abs") copy(abs);
@@ -1380,9 +1388,12 @@ if (!NS.commitGraph) {
         const copyEl = t.closest("[data-copy]");
         if (copyEl) return copyWithFeedback(copyEl);
         const parentBtn = t.closest("[data-parent]");
-        if (parentBtn) return this.toggleDetails(this.rows.indexOf(this.expanded.row), { parent: Number(parentBtn.dataset.parent) });
+        if (parentBtn) return this.toggleDetails(this.rowIndexByKey(parentBtn.closest("[data-key]").dataset.key), { parent: Number(parentBtn.dataset.parent) });
         const fileEl = t.closest("[data-file]");
-        if (fileEl) return this.openDiff(this.expanded.details.files[Number(fileEl.dataset.file)]);
+        if (fileEl) {
+          const key = fileEl.closest("[data-key]").dataset.key;
+          return this.openDiff(this.expanded.get(key).details.files[Number(fileEl.dataset.file)], key);
+        }
         if (t.closest(".t3cg-details")) return;
         const tr = t.closest("tr.t3cg-row");
         if (tr) {
@@ -1411,7 +1422,10 @@ if (!NS.commitGraph) {
       root.addEventListener("contextmenu", (e) => {
         if (e.target.closest(".t3cg-overlay,.t3cg-diff-overlay,.t3cg-dd,input,textarea")) return;
         const fileEl = e.target.closest("[data-file]");
-        if (fileEl) return this.fileMenu(e, this.expanded.details.files[Number(fileEl.dataset.file)]);
+        if (fileEl) {
+          const key = fileEl.closest("[data-key]").dataset.key;
+          return this.fileMenu(e, this.expanded.get(key).details.files[Number(fileEl.dataset.file)], key);
+        }
         const ref = e.target.closest("[data-ref-type]");
         const tr = e.target.closest("tr.t3cg-row");
         if (!tr) return;
@@ -1450,8 +1464,8 @@ if (!NS.commitGraph) {
           e.preventDefault();
           e.stopPropagation();
           this.openFind();
-        } else if (e.key === "Escape" && this.expanded && !e.target.closest("input,.t3cg-overlay,.t3cg-diff-overlay")) {
-          this.expanded = null;
+        } else if (e.key === "Escape" && this.expanded.size && !e.target.closest("input,.t3cg-overlay,.t3cg-diff-overlay")) {
+          this.expanded.clear();
           this.render();
         }
       });
