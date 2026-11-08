@@ -335,7 +335,7 @@ if (!NS.commitGraph) {
         <div class="t3cg" tabindex="-1">
           <div class="t3cg-toolbar">
             <div class="t3cg-repo"><span class="t3cg-repo-name"></span></div>
-            <button type="button" class="t3cg-dd-btn" data-act="branches"><span class="t3cg-muted">Branches:</span> <span class="t3cg-dd-label">Show All</span>${SVG.chevron}</button>
+            <button type="button" class="t3cg-dd-btn" data-act="branches" title="Branches" aria-label="Branches"><span class="t3cg-muted t3cg-dd-ico">${SVG.branch}</span><span class="t3cg-dd-label">Show All</span>${SVG.chevron}</button>
             <label class="t3cg-check t3cg-toolbar-check"><input type="checkbox" data-act="remotes"/> <span>Show Remote Branches</span></label>
             <div class="t3cg-state"></div>
             <div class="t3cg-spacer"></div>
