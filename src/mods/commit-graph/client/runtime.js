@@ -31,7 +31,31 @@ if (!NS.commitGraph) {
     if (!bridge?.showContextMenu) return null;
     return bridge.showContextMenu(items.filter(Boolean), { x: ev.clientX, y: ev.clientY });
   };
-  const copy = (text) => navigator.clipboard?.writeText(text).catch(() => {});
+  // Resolves true when the text reached the clipboard. Falls back to execCommand when the
+  // async clipboard API is missing or refused (e.g. the window is not focused).
+  const copy = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    }
+  };
+  // Copy, then swap the button's icon to a check for a moment.
+  const copyWithFeedback = async (el) => {
+    const ok = await copy(el.dataset.copy);
+    el.classList.toggle("t3cg-copied", ok);
+    el.classList.toggle("t3cg-copy-failed", !ok);
+    clearTimeout(el._t3cgCopyTimer);
+    el._t3cgCopyTimer = setTimeout(() => el.classList.remove("t3cg-copied", "t3cg-copy-failed"), 1400);
+  };
 
   // ---- opener / menu ------------------------------------------------------------
   const opener = { ref: null, store: null };
@@ -145,6 +169,8 @@ if (!NS.commitGraph) {
     refresh: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/></svg>`,
     fetch: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>`,
     close: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M18 6 6 18M6 6l12 12"/></svg>`,
+    copy: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-ico-copy"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></g></svg>`,
+    check: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-ico-check"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M20 6 9 17l-5-5"/></svg>`,
     up: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m18 15-6-6-6 6"/></svg>`,
     down: `<svg viewBox="0 0 24 24" class="t3cg-ico"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>`,
     chevron: `<svg viewBox="0 0 24 24" class="t3cg-ico t3cg-chev"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>`,
@@ -378,7 +404,7 @@ if (!NS.commitGraph) {
       this.card.addEventListener("mouseleave", () => this.scheduleHide());
       this.card.addEventListener("click", (e) => {
         const copyEl = e.target.closest("[data-copy]");
-        if (copyEl) copy(copyEl.dataset.copy);
+        if (copyEl) copyWithFeedback(copyEl);
       });
       this.cardI = null;
       this.hoverTimer = null;
@@ -635,7 +661,7 @@ if (!NS.commitGraph) {
         <div class="t3cg-card-msg">${esc(message ?? "")}</div>
         ${stats}
         ${refs ? `<div class="t3cg-card-refs">${refs}</div>` : ""}
-        <div class="t3cg-card-foot"><span class="t3cg-mono">${esc(short(row.hash))}</span> <a class="t3cg-copy" data-copy="${esc(row.hash)}" title="Copy full hash">copy</a></div>`;
+        <div class="t3cg-card-foot"><button type="button" class="t3cg-copy" data-copy="${esc(row.hash)}" title="Copy full hash"><span class="t3cg-mono">${esc(short(row.hash))}</span>${SVG.copy}${SVG.check}</button></div>`;
       // Place it left of the panel, top-aligned with the row and kept on screen. The panel is
       // on the right of the window, so this mirrors VS Code, where the card opens to the right.
       card.hidden = false;
@@ -1289,7 +1315,7 @@ if (!NS.commitGraph) {
         if (act === "abort") return this.run("Abort", "abortOperation", { state: this.data.info.state });
         if (act === "continue") return this.run("Continue", "continueOperation", { state: this.data.info.state });
         const copyEl = t.closest("[data-copy]");
-        if (copyEl) return copy(copyEl.dataset.copy);
+        if (copyEl) return copyWithFeedback(copyEl);
         const parentBtn = t.closest("[data-parent]");
         if (parentBtn) return this.toggleDetails(this.rows.indexOf(this.expanded.row), { parent: Number(parentBtn.dataset.parent) });
         const fileEl = t.closest("[data-file]");
