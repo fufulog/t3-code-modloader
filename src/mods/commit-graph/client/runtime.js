@@ -61,12 +61,10 @@ if (!NS.commitGraph) {
   const opener = { ref: null, store: null };
   let jsxRuntime = null;
   const ICON_PATHS = [
-    ["circle", { cx: 5, cy: 6, r: 3 }],
-    ["path", { d: "M5 9v6" }],
-    ["circle", { cx: 5, cy: 18, r: 3 }],
-    ["path", { d: "M12 3v18" }],
-    ["circle", { cx: 19, cy: 6, r: 3 }],
-    ["path", { d: "M16 15.7A9 9 0 0 0 19 9" }],
+    ["path", { d: "M6 3v12" }],
+    ["circle", { cx: 18, cy: 6, r: 3 }],
+    ["circle", { cx: 6, cy: 18, r: 3 }],
+    ["path", { d: "M18 9a9 9 0 0 1-9 9" }],
   ];
   function Icon(props) {
     const jsx = props?.jsx ?? jsxRuntime;
