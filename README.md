@@ -193,6 +193,10 @@ To get a client dir: `npx @electron/asar extract <mount>/resources/app.asar out`
 - T3 nightlies can move the patch anchors. When that happens, the mod disables itself and `node test/patches.test.mjs` shows which anchor broke.
 - Native context menus come from Electron's `Menu`. They match the OS rather than T3's popovers.
 
+## License
+
+[MIT](LICENSE) © 2026 joseph. This covers the modloader and the Commit Graph mod. The bundled third-party assets below keep their own licences.
+
 ## Third-party assets
 
 - File-type icons in `mods/commit-graph/client/icons/` come from [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) 5.40.0 (MIT, licence alongside them). Regenerate with `node bin/vendor-icons.mjs <extracted package dir>`.

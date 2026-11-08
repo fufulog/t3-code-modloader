@@ -3,6 +3,7 @@ id: commit-graph
 name: Commit Graph
 version: 0.1.0
 author: joseph
+license: MIT
 description: A VS Code Git Graph-style commit graph in T3's right panel.
 ---
 
