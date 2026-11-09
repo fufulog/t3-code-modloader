@@ -130,7 +130,7 @@ if (process.env.T3MOD_GATE_PRINT) {
 // Reads (never writes): list mod folders, read the core mod, check the core patch against T3's main chunk.
 const READS = [
   "<root>/src/core", "<root>/src/core/mod.cjs", "<root>/src/core/mod.md", "<root>/src/core/patches.cjs",
-  "<root>/src/main/loader.cjs", "<root>/src/main/mods.cjs", "<root>/src/main/paths.cjs", "<root>/src/main/zip.cjs",
+  "<root>/src/main/loader.cjs", "<root>/src/main/mods.cjs", "<root>/src/main/paths.cjs", "<root>/src/main/scope.cjs", "<root>/src/main/zip.cjs",
   "<tmp>/client/apps/server/dist/client/assets", "<tmp>/client/apps/server/dist/client/assets/main-abc123.js",
   "<tmp>/config.json", "<tmp>/mods",
 ];
@@ -158,7 +158,7 @@ const BASE = {
   newGlobals: ["__t3modMain"], // the loader's one global (its state)
   activeResourcesAdded: 0, // no live timers, sockets, watchers or handles left behind
   builtinRequires: ["electron", "fs", "module", "os", "path", "vm", "zlib"],
-  requires: ["<root>/src/main/mods", "<root>/src/main/paths", "<root>/src/main/zip"],
+  requires: ["<root>/src/main/mods", "<root>/src/main/paths", "<root>/src/main/scope", "<root>/src/main/zip"],
   fsReads: READS,
   log: ["[t3mod] cold start hooks installed", "[t3mod] mod core: ok", "[t3mod] preload registered", "[t3mod] patched main-abc123.js (core)"],
   requests: {
@@ -193,12 +193,13 @@ const BASELINE = {
     ...BASE,
     electron: [
       "net.fetch(t3code://app/index.html)", // capture T3's CSP
+      // the handler swap is the last step (transactional injection: a failure before it leaves T3's own handler in place)
+      ...COLD_ELECTRON.slice(2),
       "protocol.unhandle(t3code)",
       "protocol.handle(t3code, <fn>)",
-      ...COLD_ELECTRON.slice(2),
     ],
     fsReads: [...READS, "<tmp>/client/apps/server/dist/client/assets/vendor-def456.js", "<tmp>/client/apps/server/dist/client/index.html"].sort(),
-    log: ["[t3mod] mod core: ok", "[t3mod] live handler installed", "[t3mod] preload registered", "[t3mod] patched main-abc123.js (core)"],
+    log: ["[t3mod] mod core: ok", "[t3mod] preload registered", "[t3mod] live handler installed", "[t3mod] patched main-abc123.js (core)"],
   },
 };
 
