@@ -18,6 +18,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const modsLib = require("./mods.cjs");
 const paths = require("./paths.cjs");
+const { checkCompat } = require("./compat.cjs");
 
 const ROOT = path.resolve(__dirname, "../..");
 const STATE_KEY = "__t3modMain";
@@ -76,7 +77,7 @@ function writeEnabled(set) {
  * Discover mods and instantiate the ones to run. `all` (tests) ignores the config
  * and loads every usable mod. Returns { mods, found }.
  */
-function loadMods({ all = false } = {}) {
+function loadMods({ all = false, t3Version } = {}) {
   const core = modsLib.inspect(path.join(ROOT, "src/core"));
   core.id = CORE_ID;
   const found = modsLib.discover(modsDir());
@@ -85,6 +86,8 @@ function loadMods({ all = false } = {}) {
   for (const entry of [core, ...found]) {
     entry.enabled = entry === core || !enabled || enabled.has(entry.id);
     if (!entry.usable || !entry.enabled) continue;
+    entry.compat = entry === core ? { compatible: true } : checkCompat(entry.meta, t3Version, (m) => log(`mod ${entry.id}: ${m}`));
+    if (!entry.compat.compatible) continue; // declared incompatible: stays off, code never loaded
     try {
       const exported = modsLib.loadCode(entry, require);
       mods.push({ name: entry.id, entry, ...exported });
@@ -272,13 +275,23 @@ function assetDirFor(electron) {
   return path.join(electron.app.getAppPath(), "apps/server/dist/client");
 }
 
+/** The running T3's version (the app's package.json version), or "" when unreadable (checks then fail open). */
+function t3VersionOf(electron) {
+  try {
+    return String(electron.app.getVersion() ?? "");
+  } catch {
+    return "";
+  }
+}
+
 function refreshMods(electron, opts) {
-  const { mods, found, core } = loadMods(opts);
+  const { mods, found, core } = loadMods({ ...opts, t3Version: t3VersionOf(electron) });
   const assetDir = assetDirFor(electron);
   const status = verifyMods(assetDir, mods);
   state().assetDir = assetDir;
   for (const entry of [core, ...found]) {
     if (!entry.usable && entry.enabled) status[entry.id] = { ok: false, problems: entry.problems };
+    else if (entry.enabled && entry.compat && !entry.compat.compatible) status[entry.id] = { ok: false, problems: [entry.compat.reason] };
   }
   const s = state();
   s.status = status;
@@ -294,6 +307,7 @@ function refreshMods(electron, opts) {
     kind: m.kind,
     file: m.file,
     enabled: m.enabled,
+    compat: m.compat ?? { compatible: true },
     ok: m.enabled ? status[m.id]?.ok === true : null,
     problems: [...m.problems.filter((p) => !status[m.id]?.problems?.includes(p)), ...(status[m.id]?.problems ?? [])],
   }));

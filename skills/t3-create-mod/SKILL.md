@@ -19,6 +19,8 @@ mods/<id>/
 
 `id` is lowercase letters, digits and dashes. `mod.cjs` may `require` node built-ins, `electron` and its own relative files, never npm packages (bundle them into a file).
 
+Optional frontmatter field `incompatible-t3-majors: 2, 3` lists T3 major versions the mod is known NOT to work with (also `[2, 3]` or a single `2`). Leave it out by default: a mod is assumed compatible with every T3 version. Add it only once you know a major breaks the mod; the loader then keeps the mod off on that major and the Mods window says "Not compatible with T3 2.x". A malformed value is ignored (fails open).
+
 ## Workflow
 
 1. Decide the parts: UI inside T3 (patches + client runtime), privileged work (main + IPC), or both. Keep the mod as small as the feature.
