@@ -25,8 +25,11 @@ const fs = require("node:fs");
 const modsLib = require("./mods.cjs");
 const paths = require("./paths.cjs");
 const { createScope, modFacing } = require("./scope.cjs");
-// failures.cjs is loaded on first use: with no user mods nothing can fail (zero cost, see test/zero-cost.test.mjs)
+// Loaded on first use: with no user mod enabled there is nothing to fail, check or report on, so the
+// no-mods path never reads these files (zero cost, see test/zero-cost.test.mjs).
 const failuresLib = () => require("./failures.cjs");
+const anchorsLibrary = () => require("./anchors.cjs");
+const statusLibrary = () => require("./status.cjs");
 
 const ROOT = path.resolve(__dirname, "../..");
 const STATE_KEY = "__t3modMain";
@@ -40,6 +43,10 @@ function state() {
   s.owned ??= {}; // legacy (pre-scope) IPC bookkeeping, still released on unload
   s.scopes ??= {}; // mod id -> its main-process scope
   s.loaderScope ??= createScope("loader", { onError: (m) => log(m) }); // what the loader itself registered (report handler, preload script)
+  s.entries ??= []; // every discovered mod (+ core): input of the unified status (see computeCatalog)
+  s.verdicts ??= {};
+  s.anchors ??= {};
+  s.probe ??= {};
   return s;
 }
 
@@ -160,21 +167,26 @@ function verifyMods(assetDir, mods) {
   for (const mod of mods) {
     const problems = [];
     const optionalMisses = [];
+    const patchAnchors = {}; // per patch id, for anchors.cjs (kind "patch")
     for (const p of mod.patches ?? []) {
-      const miss = p.optional ? optionalMisses : problems;
+      const miss = (reason) => {
+        (p.optional ? optionalMisses : problems).push(`${p.id}: ${reason}`);
+        patchAnchors[p.id] = { state: "missing", reason, optional: p.optional === true };
+      };
       const hits = files.filter((f) => p.file.test(f));
       if (hits.length !== 1) {
-        miss.push(`${p.id}: expected 1 chunk matching ${p.file}, found ${hits.length}`);
+        miss(`expected 1 chunk matching ${p.file}, found ${hits.length}`);
         continue;
       }
       try {
         p.apply(fs.readFileSync(path.join(assets, hits[0]), "utf8"));
+        patchAnchors[p.id] = { state: "present", optional: p.optional === true };
       } catch (e) {
-        miss.push(`${p.id}: ${e.message}`);
+        miss(e.message);
       }
     }
     if (optionalMisses.length) log(`mod ${mod.name}: optional patches unavailable: ${optionalMisses.join("; ")}`);
-    verdicts[mod.name] = { ok: problems.length === 0, problems, ...(optionalMisses.length ? { optionalMisses } : {}) };
+    verdicts[mod.name] = { ok: problems.length === 0, problems, ...(optionalMisses.length ? { optionalMisses } : {}), patchAnchors };
     log(`mod ${mod.name}: ${problems.length ? "DISABLED " + problems.join("; ") : "ok"}`);
   }
   return verdicts;
@@ -315,35 +327,104 @@ function refreshMods(electron, opts) {
   s.failures?.clear(undefined, ["load", "main"]);
   const { mods, found, core } = loadMods({ ...opts, t3Version: () => t3VersionOf(electron) });
   const assetDir = assetDirFor(electron);
-  const status = verifyMods(assetDir, mods);
-  for (const entry of [core, ...found]) {
-    if (!entry.usable && entry.enabled) status[entry.id] = { ok: false, problems: entry.problems, ...(entry.failure ? { failure: entry.failure } : {}) };
-    else if (entry.enabled && entry.compat && !entry.compat.compatible) status[entry.id] = { ok: false, problems: [entry.compat.reason] };
-  }
-  const catalog = [core, ...found].map((m) => ({
-    builtin: m === core,
-    id: m.id,
-    name: m.name,
-    version: m.version,
-    author: m.author,
-    description: m.description,
-    markdown: m.markdown,
-    kind: m.kind,
-    file: m.file,
-    enabled: m.enabled,
-    compat: m.compat ?? { compatible: true },
-    ok: m.enabled ? status[m.id]?.ok === true : null,
-    failure: status[m.id]?.failure ?? null,
-    problems: [...m.problems.filter((p) => !status[m.id]?.problems?.includes(p)), ...(status[m.id]?.problems ?? [])],
-  }));
-  for (const [id, failure] of Object.entries(s.failures?.all() ?? {})) if (failure.phase === "renderer" && status[id]) failuresLib().applyFailure(status, catalog, id, failure);
-  // Commit only now: a throw above leaves the previous state untouched.
-  s.assetDir = assetDir;
-  s.status = status;
-  s.mods = mods;
-  s.catalog = catalog;
+  const verdicts = verifyMods(assetDir, mods);
+  const next = { entries: [core, ...found], verdicts, mods, anchors: checkAnchors(mods, verdicts, assetDir), probe: s.probe };
+  const computed = computeCatalog(next); // may throw: nothing is committed until it has succeeded
+  Object.assign(s, next, computed, { assetDir });
   // Route the (possibly older) installed handler through this module's code.
   s.dispatch = (request, inner) => makeWrapped(inner, getMods)(request);
+}
+
+/** Static anchor results per loaded user mod (runtime-only anchors come back "unknown" until probed). */
+function checkAnchors(mods, verdicts, assetDir) {
+  const out = {};
+  const user = mods.filter((m) => m.name !== CORE_ID);
+  if (!user.length) return out; // nothing to check: anchors.cjs is not even loaded
+  const anchorsLib = anchorsLibrary();
+  let chunkNames = [];
+  try {
+    chunkNames = fs.readdirSync(path.join(assetDir, "assets")).filter((f) => f.endsWith(".js"));
+  } catch {}
+  const readChunk = (name) => fs.readFileSync(path.join(assetDir, "assets", name), "utf8");
+  for (const mod of user) out[mod.name] = anchorsLib.checkStatic(mod, { require, chunkNames, readChunk, patchResults: verdicts[mod.name]?.patchAnchors });
+  return out;
+}
+
+/**
+ * THE status computation. Everything the Mods window shows about a mod, and which mods inject, comes
+ * from here: s.status (what injects, served as status.json) and s.catalog (what the window lists).
+ * Inputs: the discovered entries (with the compat manifest's verdict, `entry.compat`), the dry-run
+ * patch verdicts, static anchor results, the renderer's probe results and the failure records
+ * (failures.cjs). It is a pure function of its input, so it can be run again at any time without
+ * touching T3: after a scan, after a probe, after a failure.
+ */
+function computeCatalog({ entries, verdicts, anchors, probe, mods }) {
+  const status = {};
+  const core = entries.find((e) => e.id === CORE_ID);
+  const failureOf = (entry) => state().failures?.get(entry.id) ?? null;
+  // The built-in core is only evaluated if it failed; user mods whenever they are enabled. With none of those
+  // there is nothing to evaluate, and the status and anchor modules are not even loaded (zero cost).
+  const evaluates = (entry) => entry.enabled && (entry !== core || !!failureOf(entry));
+  const any = entries.some(evaluates);
+  const statusLib = any ? statusLibrary() : null;
+  const anchorsLib = any ? anchorsLibrary() : null;
+  const catalog = entries.map((entry) => {
+    const verdict = verdicts?.[entry.id];
+    const evaluated = evaluates(entry);
+    const failure = evaluated ? failureOf(entry) : null;
+    const loaded = evaluated && entry.usable && verdict;
+    const st = evaluated ? statusLib.computeStatus({ anchors: loaded ? anchorsLib.withProbe(anchors?.[entry.id], probe?.[entry.id]) : null, ...statusLib.inputsFor(entry, failure) }) : null;
+    if (entry.enabled) {
+      if (!st) status[entry.id] = verdict ? { ...verdict } : { ok: false, problems: entry.problems }; // core
+      else if (!entry.usable && !failure) status[entry.id] = { ok: false, problems: entry.problems }; // listed in config but not a usable mod
+      else {
+        // A required patch miss (verdict) and any blocking anchor miss (status) both keep the mod out; so do
+        // an incompatible declaration and a failure, which also never reach the patch step.
+        const extra = st.injects ? [] : st.state === "anchors-missing" ? st.missing.filter((m) => !m.optional && m.kind !== "patch").map(statusLib.describeMissing) : [st.reason];
+        status[entry.id] = { ...(verdict ?? {}), ok: !!verdict && verdict.ok && st.injects, problems: [...(verdict?.problems ?? []), ...extra], ...(failure ? { failure } : {}) };
+      }
+    }
+    return {
+      builtin: entry === core,
+      id: entry.id,
+      name: entry.name,
+      version: entry.version,
+      author: entry.author,
+      description: entry.description,
+      markdown: entry.markdown,
+      kind: entry.kind,
+      file: entry.file,
+      enabled: entry.enabled,
+      compat: entry.compat ?? { compatible: true },
+      ok: entry.enabled ? status[entry.id]?.ok === true : null,
+      failure: status[entry.id]?.failure ?? null,
+      problems: [...entry.problems.filter((p) => !status[entry.id]?.problems?.includes(p)), ...(status[entry.id]?.problems ?? [])],
+      status: st,
+      probes: loaded ? anchorsLib.runtimeSpecs(mods.find((m) => m.name === entry.id)) : [],
+    };
+  });
+  return { status, catalog };
+}
+
+/** Recompute status and catalog from the current state (after a probe or a failure). */
+function applyStatuses() {
+  Object.assign(state(), computeCatalog(state()));
+}
+
+/**
+ * Take the Mods window's probe results (see src/core/client/probe.js) and fold them into every mod's
+ * status. A blocking runtime anchor that is gone takes the mod's main-process side away right away, through
+ * the same unload as any other cleanup; its already-patched renderer code only goes away at the next
+ * reload, and the loader never reloads by itself.
+ */
+function probeAnchors(electron, results) {
+  const s = state();
+  for (const m of s.catalog ?? []) {
+    if (!m.probes?.length || !results || !Object.hasOwn(results, m.id)) continue;
+    s.probe[m.id] = anchorsLibrary().sanitizeProbe(results[m.id], m.probes);
+  }
+  applyStatuses();
+  unloadInactive(electron);
 }
 
 // ---- per-mod transactions ----------------------------------------------------
@@ -377,7 +458,7 @@ function failMod(electron, id, phase, error) {
   const s = state();
   const failure = failures().fail(id, phase, error);
   unloadMod(electron, id);
-  failuresLib().applyFailure(s.status, s.catalog, id, failure);
+  applyStatuses(); // the failure record makes this mod's status "failed"; nothing else re-enables it
   log(`mod ${id} FAILED (${phase}): ${failure.reason}; everything it registered was undone`);
   return failure;
 }
@@ -407,10 +488,16 @@ function loadMain(electron, mod) {
   }
 }
 
-function setupMain(electron, tx) {
+/** Take back the main-process side of every mod that is no longer meant to run (unloaded, failed, anchors gone). */
+function unloadInactive(electron) {
   const s = state();
   const active = new Set(getMods().map((m) => m.name));
   for (const name of new Set([...Object.keys(s.scopes), ...Object.keys(s.owned)])) if (!active.has(name) || !s.status[name]?.ok) unloadMod(electron, name);
+}
+
+function setupMain(electron, tx) {
+  const s = state();
+  unloadInactive(electron);
   for (const mod of getMods()) {
     if (!s.status[mod.name]?.ok || typeof mod.main !== "function") continue;
     unloadMod(electron, mod.name);
@@ -477,6 +564,7 @@ function deactivate(electron, tx, error) {
   resetLoaderScope();
   s.removed = true;
   s.mods = [];
+  s.entries = []; // nothing left to compute a status from
   s.status = {};
   s.catalog = [];
   s.loaderError = failuresLib().shortReason(error);
@@ -493,6 +581,11 @@ function loaderApi(electron) {
   };
   const api = {
     list: view,
+    /** The Mods window reports what its probe found for runtime-only anchors (see probeAnchors). */
+    probe(results) {
+      probeAnchors(electron, results);
+      return view();
+    },
     rescan() {
       refreshMods(electron);
       setupMain(electron);
@@ -544,6 +637,7 @@ function loaderApi(electron) {
       if (!loaded.length) step("No mods were loaded");
       s.removed = true;
       s.mods = [];
+      s.entries = [];
       s.status = {};
       for (const name of new Set([...Object.keys(s.scopes), ...Object.keys(s.owned)])) unloadMod(electron, name);
       resetLoaderScope(); // report handler, preload script
@@ -745,4 +839,4 @@ async function live({ reload = true, electron: injected } = {}) {
   return { status: s.status, log: s.log.slice(-15) };
 }
 
-module.exports = { live, cold, _internals: { patchChunk, verifyMods, loadMods, loaderApi, setupMain, refreshMods, failMod, unloadMod, state } };
+module.exports = { live, cold, _internals: { patchChunk, verifyMods, loadMods, loaderApi, setupMain, refreshMods, applyStatuses, failMod, unloadMod, state } };

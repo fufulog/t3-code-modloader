@@ -4,6 +4,7 @@
 // Exposes globalThis.__t3mod.core = { icon, open, close }.
 
 import { scope } from "/__t3mod/kit.js";
+import { createProbe } from "./probe.js";
 
 const NS = (globalThis.__t3mod ??= {});
 const S = scope("core"); // registration helpers: a failed setup is undone and reported to the loader
@@ -155,6 +156,32 @@ if (!NS.core) {
       }
     };
 
+    // One status per enabled mod, computed once by the loader (src/main/status.cjs): compatible, incompatible,
+    // failed or anchors-missing. The tag on the card and the explanation in the preview both come from it.
+    const statusOf = (m) => (m.enabled && !m.builtin && m.status && m.status.state !== "compatible" ? m.status : null);
+    const statusTag = (m) => {
+      const s = statusOf(m);
+      if (!s) return m.enabled && m.ok === false ? '<span class="t3m-tag t3m-tag-bad">not active</span>' : "";
+      const label = { incompatible: "incompatible", failed: "failed", "anchors-missing": s.injects ? "fallback in use" : "anchors missing" }[s.state];
+      return `<span class="t3m-tag t3m-tag-bad">${esc(label)}</span>`;
+    };
+    // The explanation in the preview: the reason for incompatible/failed, the named anchors for anchors-missing.
+    const statusBlock = (m) => {
+      const s = statusOf(m);
+      const unverified = m.enabled && m.status?.unverified?.length ? `<div class="t3m-muted">Not verifiable from outside: ${m.status.unverified.map((a) => `<code>${esc(a.name)}</code>`).join(", ")}</div>` : "";
+      if (!s) return unverified;
+      const intro = {
+        incompatible: "Not active: this mod does not support this version of T3.",
+        failed: "Not active: it failed to load. Everything it set up was undone.",
+        "anchors-missing": s.injects ? "Running with a fallback: T3 changed and part of what this mod hooks into is gone." : "Not active: T3 changed and what this mod hooks into is gone.",
+      }[s.state];
+      const detail =
+        s.state === "anchors-missing"
+          ? `<ul class="t3m-anchors">${s.missing.map((a) => `<li><code>${esc(a.name)}</code>${a.reason ? ` <span class="t3m-meta">${esc(a.reason)}</span>` : ""}${a.fallback ? ` <span class="t3m-meta">Fallback: ${esc(a.fallback)}</span>` : ""}</li>`).join("")}</ul>`
+          : `<div>${esc(s.reason)}</div>`;
+      return `<div class="t3m-warn">${esc(intro)}${detail}</div>${unverified}`;
+    };
+
     const item = (m) => {
       const bad = m.enabled && m.ok === false;
       const moved = st.pending.has(m.id);
@@ -164,7 +191,7 @@ if (!NS.core) {
         ${m.version ? `<span class="t3m-ver">${esc(m.version)}</span>` : ""}
         ${m.builtin ? `<span class="t3m-tag">${LOCK} built in</span>` : ""}
         ${m.kind === "zip" ? '<span class="t3m-tag">zip</span>' : ""}
-        ${bad ? '<span class="t3m-tag t3m-tag-bad">not active</span>' : ""}
+        ${statusTag(m)}
         ${moved ? `<span class="t3m-tag t3m-tag-pending">${on ? "will load" : "will unload"}</span>` : ""}
         ${m.description ? `<span class="t3m-desc">${esc(m.description)}</span>` : ""}
       </button>`;
@@ -212,7 +239,9 @@ if (!NS.core) {
       } else {
         const bad = sel.enabled && sel.ok === false;
         const meta = [sel.version && `v${esc(sel.version)}`, sel.author && esc(sel.author), sel.builtin ? "built in" : sel.kind === "zip" ? "zip" : "folder", !sel.builtin && esc(sel.file)].filter(Boolean).join(" · ");
-        const problems = sel.problems.length ? `<div class="t3m-problems">${sel.problems.map((p) => `<div>${esc(p)}</div>`).join("")}</div>` : "";
+        // One message per state: when the status explains what is wrong, the raw problem lines (which say the same) are not repeated.
+        const block = statusBlock(sel);
+        const problems = !block && sel.problems.length ? `<div class="t3m-problems">${sel.problems.map((p) => `<div>${esc(p)}</div>`).join("")}</div>` : "";
         const label = want(sel) ? "Unload" : "Load";
         const action = sel.builtin
           ? `<button class="t3m-btn t3m-danger" data-act="confirm-remove">Remove modloader…</button>`
@@ -222,7 +251,7 @@ if (!NS.core) {
             <div class="t3m-pv-title"><strong>${esc(sel.name)}</strong><span class="t3m-meta">${meta}</span></div>
             ${action}
           </div>
-          ${bad ? `<div class="t3m-warn">${sel.failure ? `Failed to load (${esc(sel.failure.phase)}): ${esc(sel.failure.reason)}. Everything it set up was undone.` : sel.compat?.compatible === false ? esc(sel.compat.reason) + ": loaded, but not active." : "Loaded, but not active: it does not match this version of T3."}</div>` : ""}
+          ${block || (bad && !problems ? '<div class="t3m-warn">Loaded, but not active: it does not match this version of T3.</div>' : "")}
           ${problems}
           <div class="t3m-md">${sel.markdown ? markdown(sel.markdown) : '<p class="t3m-muted">This mod has no mod.md description.</p>'}</div>`;
       }
@@ -250,7 +279,22 @@ if (!NS.core) {
         return false;
       }
       render();
+      if (op === "list" || op === "rescan") await probeAnchors();
       return true;
+    }
+
+    // Anchors that only exist in the page (DOM, window) are checked here, read-only (probe.js),
+    // and reported back so the loader can fold them into each mod's status.
+    async function probeAnchors() {
+      const asked = (st.data?.mods ?? []).filter((m) => m.probes?.length);
+      if (!asked.length) return;
+      try {
+        const probe = createProbe({ document, window });
+        st.data = await ops("probe", { results: Object.fromEntries(asked.map((m) => [m.id, probe.run(m.probes)])) });
+        render();
+      } catch (e) {
+        console.debug("[t3mod] anchor probe failed", e);
+      }
     }
 
     root.addEventListener("mousedown", (e) => {

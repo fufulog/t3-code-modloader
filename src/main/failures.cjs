@@ -1,10 +1,11 @@
 "use strict";
-// Per-mod "failed" status, kept apart from the rest of the loader so it can be merged
-// with the other sources of a mod's state (compatibility manifest, anchor checks).
+// Per-mod failure records. They are one of the three inputs of the unified mod status
+// (status.cjs: declared incompatible, anchors, failed); loader.cjs computeCatalog turns a
+// record into the mod's `failed` state.
 //
 // A failure is { phase, reason, at } with phase "load" (mod.cjs threw), "main"
 // (main() threw or rejected) or "renderer" (the mod's client runtime reported it).
-// The Mods window reads it from the catalog as `failure`.
+// The catalog carries it as `failure`.
 
 const MAX_REASON = 200;
 
@@ -33,16 +34,4 @@ function createFailures() {
   };
 }
 
-/** Apply a failure to a mod's status entry and its catalog entry (both mutated in place). */
-function applyFailure(status, catalog, id, failure) {
-  const line = `${failure.phase} setup failed: ${failure.reason}`;
-  status[id] = { ok: false, problems: [line], failure };
-  const entry = catalog.find((m) => m.id === id);
-  if (entry) {
-    entry.ok = false;
-    entry.failure = failure;
-    entry.problems = [...entry.problems.filter((p) => p !== line), line];
-  }
-}
-
-module.exports = { createFailures, applyFailure, shortReason };
+module.exports = { createFailures, shortReason };

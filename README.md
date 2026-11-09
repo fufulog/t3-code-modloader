@@ -135,6 +135,7 @@ mods/                 your mods: one folder or one .zip each
   - `/__t3mod/status.json` reports each mod's status.
 - A patch can be `optional: true`: if its anchor is missing it is skipped and logged, and the mod stays loaded (Commit Graph uses this for T3's diff component).
 - Patches are string-anchored. Minified identifiers are captured by regex, not hard-coded. Each mod is verified as a whole against the current bundle before it is enabled: if any required anchor is missing (e.g. after a T3 update), that mod turns itself off and T3 loads unmodified.
+- A mod lists what it depends on in T3 as `anchors` in its `mod.cjs` (patches count automatically). Each enabled mod gets one status, worked out by `src/main/status.cjs` and shown in the Mods window: compatible, incompatible (it declared the running T3 major, see "Declaring incompatible T3 versions"), failed (injection failed, with the reason; everything it set up was undone), or anchors missing (the gone anchors are named). First match wins, in that order. Anchors are checked when the window opens. A required anchor that is gone keeps the mod from injecting; one with a `fallback` leaves it running on that fallback. Format, what can be checked without injecting, and the read-only renderer probe: [docs/design/anchors.md](docs/design/anchors.md).
 - `main({ electron, ipcMain, scope, log, isTrustedSender, loader })` runs in the main process. Everything a mod changes goes through `scope` (see "Mod registration helpers"), so unloading, disabling, hot reload and a failed load all undo it the same way.
 
 ## The Mods button
@@ -228,7 +229,7 @@ Rules:
 ## Tests
 
 ```sh
-npm test                                    # git ops against a throwaway repo + bare remote, incl. hostile input; then zip/discovery/config tests; then asar patching and install/uninstall against a synthetic T3; then transactional injection (fixture mods that fail at every stage, against a fake Electron)
+npm test                                    # git ops against a throwaway repo + bare remote, incl. hostile input; then zip/discovery/config tests; compat manifest; asar patching and install/uninstall against a synthetic T3; the zero-cost gate; hooks; transactional injection (fixture mods that fail at every stage, against a fake Electron); anchor declarations and checks, the unified mod status and the renderer probe (stub T3, no real install)
 node test/patches.test.mjs <client dir>     # anchors + syntax of patched chunks, against an extracted app.asar
 ```
 
