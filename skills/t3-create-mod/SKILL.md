@@ -30,8 +30,10 @@ mods/<id>/
    - Prepend `import "/__t3mod/<id>/runtime.js";` once (check `includes` so a second pass is a no-op).
    - Copy `replaceOnce` and `jsxAlias` from `mods/commit-graph/patches.cjs`.
    Find anchors by extracting the client: `npx @electron/asar extract <app.asar> out`, then grep `out/apps/server/dist/client/assets`.
-4. **Runtime** (`client/runtime.js`, an ES module): `const NS = (globalThis.__t3mod ??= {}); if (!NS.<id>) { ... }` so a second import does nothing. Load the stylesheet with a `<link>` built from `import.meta.url`. Prefer plain DOM in one host element over depending on T3's React internals. Prefix every CSS class with a short mod-specific prefix.
-5. **Main** (`main({ electron, ipcMain, log, isTrustedSender, loader })`): register one handler on `t3mod:<id>:<name>` (the preload only allows `^t3mod:[a-z0-9-]+:[a-zA-Z0-9-]+$`). Always check `isTrustedSender(event)`, switch over a fixed list of ops, validate every field, never build shell strings from input, and reply `{ ok: true, data }` or `{ ok: false, error }`. The renderer calls `window.t3mod.invoke(channel, payload)`. Handlers are released when the mod unloads.
+4. **Runtime** (`client/runtime.js`, an ES module): `import { scope } from "/__t3mod/kit.js"; const S = scope("<id>"); S.run(() => { ... })`. Inside `run`, use `S.style(url | { css })`, `S.add(el, parent = body)`, `S.on(target, type, fn)`, `S.timeout/interval`, `S.patch(obj, key, orig => fn)`, `S.global(name, api)` (publishes `globalThis.__t3mod[name]` for the patched chunks) and `S.defer(undo)`. A throw or rejected promise undoes everything registered so far and reports the mod as failed to the loader. Load the stylesheet with `S.style(new URL("./style.css", import.meta.url).href)`. Prefer plain DOM in one host element over depending on T3's React internals. Prefix every CSS class with a short mod-specific prefix.
+5. **Main** (`main({ electron, scope, log, isTrustedSender, loader })`): register one handler with `scope.ipcHandle("t3mod:<id>:<name>", fn)` (the preload only allows `^t3mod:[a-z0-9-]+:[a-zA-Z0-9-]+$`). Always check `isTrustedSender(event)`, switch over a fixed list of ops, validate every field, never build shell strings from input, and reply `{ ok: true, data }` or `{ ok: false, error }`. The renderer calls `window.t3mod.invoke(channel, payload)`. Handlers are released when the mod unloads or fails.
+   **Registration helpers (mandatory):** change T3 only through `scope`, so a failure halfway is undone completely:
+   `scope.ipcHandle/ipcOn/ipcOnce(channel, fn)`, `scope.on(emitter, event, fn)`, `scope.patch(obj, key, orig => fn)`, `scope.timeout/interval(fn, ms)`, `scope.window(() => new BrowserWindow())`, `scope.defer(undo)` for anything else (files, child processes, own state). Undo runs newest first; a disposer that throws is logged and the rest still run. Do not register things at the top level of `mod.cjs` or on `electron` directly; the loader cannot undo those. A throw (or rejected promise) from `main` marks the mod failed with a short reason and undoes everything it registered.
 6. **Verify live**, then test:
    - `node bin/t3mod-inject.mjs` hot-loads the repo into the running T3 and reloads the window. Never kill or restart T3 to test.
    - Drive the UI through `--eval-only FILE` (main-process script using `webContents.executeJavaScript` and `capturePage`) and look at a screenshot.
@@ -42,5 +44,5 @@ mods/<id>/
 ## Rules of thumb
 
 - A mod runs with full main-process access: keep IPC narrow, whitelisted and validated.
-- Unloading must leave T3 as it was. Keep state in the renderer or in files you own.
+- Unloading and failing must leave T3 as it was: use the registration helpers for every change. Keep state in the renderer or in files you own (and `defer` their removal).
 - Change only what the feature needs; do not alter T3's existing behaviour for people who never open the mod.
