@@ -2,7 +2,7 @@
 
 An **anchor** is a place in T3 a mod hooks into: a string in a client chunk, an export of a module in the main process, an element or global in the page. When a T3 update moves one, the mod should not misbehave. The Mods window says which mod is affected and which anchor is gone, and it works that out when the window opens.
 
-Code: `src/main/anchors.cjs` (declarations and checks), `src/main/status.cjs` (the unified status), `src/core/client/probe.js` (the renderer probe), wiring in `src/main/loader.cjs` (`applyStatuses`, `probeAnchors`).
+Code: `src/main/anchors.cjs` (declarations and checks), `src/main/status.cjs` (the unified status), `src/core/client/probe.js` (the renderer probe), wiring in `src/main/loader.cjs` (`computeCatalog`, `applyStatuses`, `probeAnchors`), `src/main/failures.cjs` and `src/main/compat.cjs` (the other two inputs).
 
 ## Declaring anchors
 
@@ -71,7 +71,7 @@ Not statically checkable, by construction: anything a T3 chunk computes at run t
 Limits worth knowing:
 
 - **Only enabled mods are checked.** Reading `patches` and `anchors` means running the mod's `mod.cjs`, which the loader will not do until the user has loaded the mod (mods run with full access in the main process). A mod under *Available* shows no anchor status. If that turns out to matter, a purely declarative `anchors.json` could be read without running code.
-- **A runtime anchor is checked each time the window opens.** Until the first open after T3 starts, a mod with a gone runtime anchor still injects. Once the probe reports it, the main side is released immediately (`releaseIpc`); renderer code already patched into the page only goes away at the next reload, and the loader never reloads by itself.
+- **A runtime anchor is checked each time the window opens.** Until the first open after T3 starts, a mod with a gone runtime anchor still injects. Once the probe reports it, the main side is undone immediately (`unloadMod`, the same disposal as for a failure); renderer code already patched into the page only goes away at the next reload, and the loader never reloads by itself.
 
 ## The safe probe
 
@@ -90,7 +90,7 @@ The loader treats probe output as untrusted (`sanitizeProbe`): only anchors it a
 `computeStatus({ anchors, declaredIncompatible, injectionFailure })` in `src/main/status.cjs` gives the state the Mods window shows. States and **precedence** (first that holds wins; the others are listed in `also`):
 
 1. `incompatible`: the mod declares it does not support this T3. It is not injected.
-2. `failed`: injection was tried and failed (with the reason). The mod is not active.
+2. `failed`: injection was tried and failed (with the reason; everything the mod registered was undone). The mod is not active.
 3. `anchors-missing`: one or more anchors gone, named in `missing`. `injects` is `false` if any is required, `true` if every missing one has a fallback.
 4. `compatible`.
 
@@ -98,9 +98,15 @@ Reasoning: a declaration is the author's explicit word and prevents injection, s
 
 The result also carries `checked` (anchors were evaluated; false for a mod that is not loaded), `reason` (one line), `missing`, `unverified` (the `unknown` ones) and `present` (a count). The Mods window shows a tag per state, lists the missing anchors with their reasons and fallbacks, and lists the unverifiable ones in a muted line.
 
-### Inputs owned by other work (stubs)
+### Where the three inputs come from
 
-`declaredIncompatible` (`{ reason }` or `null`) and `injectionFailure` (`{ reason }` or `null`) come from the compatibility-manifest and failed-injection work. Here they are plain data produced by `stubAdapters` in `src/main/status.cjs`, which returns `null` for both. Connect them at the two `TODO(merge: ...)` markers in that file; `loader.cjs` `applyStatuses()` already calls `statusLib.collectInputs(entry, { version })` for every mod, so replacing the two adapter functions is the whole change (plus passing the running T3 version, `s.t3Version`, which nothing sets yet). An adapter that throws counts as "nothing known".
+There is one computation, `computeCatalog` in `src/main/loader.cjs`, which calls `computeStatus` for every enabled user mod and builds both `s.status` (which mods inject, served as `status.json`) and the Mods window catalog from the result. It runs after every scan, after the window reports its probe results, and when a mod fails, so nothing else decides whether a mod is active.
+
+- `declaredIncompatible` is the compatibility manifest's verdict (`src/main/compat.cjs`), computed once when the mod is loaded and kept as `entry.compat`; `inputsFor` in `status.cjs` only reshapes it (`{ reason }`, e.g. `Not compatible with T3 2.x`). The T3 version is read once, lazily, by the loader (`t3VersionOf`) for that check, so `status.cjs` needs no version of its own. An incompatible mod's code is never loaded, so it has no anchors to check.
+- `injectionFailure` is the mod's record in `src/main/failures.cjs` (`{ phase, reason, at }`, phase `load`, `main` or `renderer`). Its `reason` line is `main setup failed: <why>`. `load` and `main` failures are re-derived on every scan (the mod is tried again); a `renderer` failure is kept until the mod is loaded or unloaded again. A failed mod stays out: `injects` is `false`, the probe and later scans cannot bring it back, and its main-process side was already undone by `unloadMod`.
+- A runtime anchor reported gone by the probe takes the mod's main side away through the same `unloadMod` (its scope is disposed: handlers, listeners, timers, windows), not through a separate release path.
+
+With no user mod enabled nothing is evaluated: `status.cjs`, `anchors.cjs` and `failures.cjs` are not even loaded (the zero-cost gate), and the catalog's `status` is `null` for the built-in core and for mods that are not enabled.
 
 ## Commit Graph's anchors
 

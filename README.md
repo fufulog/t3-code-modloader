@@ -123,7 +123,9 @@ src/main/mods.cjs     finds mods (folder or zip) and runs their code from memory
 src/main/zip.cjs      the zip reader/writer
 src/main/preload.cjs  exposes window.t3mod.invoke(channel, payload); channels must match t3mod:<mod>:<name>
 src/main/scope.cjs    the disposer stack behind the registration helpers (transactional injection)
-src/main/failures.cjs the per-mod "failed" status (phase + short reason) the Mods window reads
+src/main/failures.cjs the per-mod failure records (phase + short reason), one input of the status
+src/main/anchors.cjs  anchor declarations and checks (static; the renderer probe covers runtime-only ones)
+src/main/status.cjs   the one status per mod: incompatible, failed, anchors missing or compatible
 src/client/kit.js     renderer-side registration helpers, served at /__t3mod/kit.js
 src/core/             built in: the Mods button and modal (always loaded)
 mods/                 your mods: one folder or one .zip each
@@ -135,7 +137,7 @@ mods/                 your mods: one folder or one .zip each
   - `/__t3mod/status.json` reports each mod's status.
 - A patch can be `optional: true`: if its anchor is missing it is skipped and logged, and the mod stays loaded (Commit Graph uses this for T3's diff component).
 - Patches are string-anchored. Minified identifiers are captured by regex, not hard-coded. Each mod is verified as a whole against the current bundle before it is enabled: if any required anchor is missing (e.g. after a T3 update), that mod turns itself off and T3 loads unmodified.
-- A mod lists what it depends on in T3 as `anchors` in its `mod.cjs` (patches count automatically). Each enabled mod gets one status, worked out by `src/main/status.cjs` and shown in the Mods window: compatible, incompatible (it declared the running T3 major, see "Declaring incompatible T3 versions"), failed (injection failed, with the reason; everything it set up was undone), or anchors missing (the gone anchors are named). First match wins, in that order. Anchors are checked when the window opens. A required anchor that is gone keeps the mod from injecting; one with a `fallback` leaves it running on that fallback. Format, what can be checked without injecting, and the read-only renderer probe: [docs/design/anchors.md](docs/design/anchors.md).
+- A mod lists what it depends on in T3 as `anchors` in its `mod.cjs` (patches count automatically). Each enabled mod gets one status, worked out by `src/main/status.cjs` and shown in the Mods window: compatible, incompatible (it declared the running T3 major, see "Declaring incompatible T3 versions"), failed (injection failed, with the reason; everything it set up was undone), or anchors missing (the gone anchors are named). First match wins, in that order, and the Mods window shows one message for the state: the manifest's reason, the failure's reason, or the names of the missing anchors. The status is computed in one place (`computeCatalog` in `loader.cjs`, using `status.cjs`) from the manifest verdict, the failure records and the anchor results, so a rescan, an anchor probe or a late failure all give the same answer, and none of them can bring a failed or incompatible mod back. Anchors are checked when the window opens. A required anchor that is gone keeps the mod from injecting; one with a `fallback` leaves it running on that fallback. Format, what can be checked without injecting, and the read-only renderer probe: [docs/design/anchors.md](docs/design/anchors.md).
 - `main({ electron, ipcMain, scope, log, isTrustedSender, loader })` runs in the main process. Everything a mod changes goes through `scope` (see "Mod registration helpers"), so unloading, disabling, hot reload and a failed load all undo it the same way.
 
 ## The Mods button
@@ -184,7 +186,7 @@ A mod is assumed compatible with every T3 version. To say otherwise, list the T3
 incompatible-t3-majors: 2, 3     # also accepted: [2, 3] or a single 2
 ```
 
-On a T3 whose major is listed, the mod is not loaded and stays off. The Mods window marks it "not active" and shows "Not compatible with T3 2.x". Other majors are unaffected. The check fails open: a malformed value or a T3 version the loader cannot read counts as compatible (a warning goes to the log). The running version comes from the app's `getVersion()`.
+On a T3 whose major is listed, the mod is not loaded and stays off. The Mods window tags it "incompatible" and shows "Not compatible with T3 2.x" (this is the `incompatible` state of the mod's one status; see "How mods work"). Other majors are unaffected. The check fails open: a malformed value or a T3 version the loader cannot read counts as compatible (a warning goes to the log). The running version comes from the app's `getVersion()`.
 
 Mods are a folder or a zip, never both under one id; the first one found wins and the other is reported as a duplicate in the modal.
 

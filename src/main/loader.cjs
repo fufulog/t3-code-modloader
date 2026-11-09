@@ -323,7 +323,7 @@ function t3VersionOf(electron) {
 
 function refreshMods(electron, opts) {
   const s = state();
-  // main/load failures are re-derived on every scan; a renderer failure sticks until the window reloads
+  // main/load failures are re-derived on every scan; a renderer failure sticks until the mod is loaded or unloaded again
   s.failures?.clear(undefined, ["load", "main"]);
   const { mods, found, core } = loadMods({ ...opts, t3Version: () => t3VersionOf(electron) });
   const assetDir = assetDirFor(electron);
