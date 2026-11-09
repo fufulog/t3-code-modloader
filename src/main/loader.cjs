@@ -18,7 +18,6 @@ const path = require("node:path");
 const fs = require("node:fs");
 const modsLib = require("./mods.cjs");
 const paths = require("./paths.cjs");
-const { checkCompat } = require("./compat.cjs");
 
 const ROOT = path.resolve(__dirname, "../..");
 const STATE_KEY = "__t3modMain";
@@ -78,6 +77,9 @@ function writeEnabled(set) {
  * and loads every usable mod. Returns { mods, found }.
  */
 function loadMods({ all = false, t3Version } = {}) {
+  // Lazy: compat.cjs and the T3 version are only touched once a user mod is enabled (zero cost with no mods).
+  let version;
+  const versionOf = () => (version ??= typeof t3Version === "function" ? t3Version() : t3Version);
   const core = modsLib.inspect(path.join(ROOT, "src/core"));
   core.id = CORE_ID;
   const found = modsLib.discover(modsDir());
@@ -86,7 +88,7 @@ function loadMods({ all = false, t3Version } = {}) {
   for (const entry of [core, ...found]) {
     entry.enabled = entry === core || !enabled || enabled.has(entry.id);
     if (!entry.usable || !entry.enabled) continue;
-    entry.compat = entry === core ? { compatible: true } : checkCompat(entry.meta, t3Version, (m) => log(`mod ${entry.id}: ${m}`));
+    entry.compat = entry === core ? { compatible: true } : require("./compat.cjs").checkCompat(entry.meta, versionOf(), (m) => log(`mod ${entry.id}: ${m}`));
     if (!entry.compat.compatible) continue; // declared incompatible: stays off, code never loaded
     try {
       const exported = modsLib.loadCode(entry, require);
@@ -285,7 +287,7 @@ function t3VersionOf(electron) {
 }
 
 function refreshMods(electron, opts) {
-  const { mods, found, core } = loadMods({ ...opts, t3Version: t3VersionOf(electron) });
+  const { mods, found, core } = loadMods({ ...opts, t3Version: () => t3VersionOf(electron) });
   const assetDir = assetDirFor(electron);
   const status = verifyMods(assetDir, mods);
   state().assetDir = assetDir;
