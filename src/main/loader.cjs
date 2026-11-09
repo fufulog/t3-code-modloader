@@ -17,6 +17,8 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const modsLib = require("./mods.cjs");
+const anchorsLib = require("./anchors.cjs");
+const statusLib = require("./status.cjs");
 const paths = require("./paths.cjs");
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -29,6 +31,10 @@ function state() {
   const s = (globalThis[STATE_KEY] ??= { log: [], status: {}, csp: null, handlerInstalled: false });
   s.catalog ??= []; // fields added after a live-injected older version created the state
   s.owned ??= {};
+  s.entries ??= []; // anchors / status (added later still)
+  s.verdicts ??= {};
+  s.anchors ??= {};
+  s.probe ??= {};
   return s;
 }
 
@@ -136,21 +142,26 @@ function verifyMods(assetDir, mods) {
   for (const mod of mods) {
     const problems = [];
     const optionalMisses = [];
+    const patchAnchors = {}; // per patch id, for anchors.cjs (kind "patch")
     for (const p of mod.patches ?? []) {
-      const miss = p.optional ? optionalMisses : problems;
+      const miss = (reason) => {
+        (p.optional ? optionalMisses : problems).push(`${p.id}: ${reason}`);
+        patchAnchors[p.id] = { state: "missing", reason, optional: p.optional === true };
+      };
       const hits = files.filter((f) => p.file.test(f));
       if (hits.length !== 1) {
-        miss.push(`${p.id}: expected 1 chunk matching ${p.file}, found ${hits.length}`);
+        miss(`expected 1 chunk matching ${p.file}, found ${hits.length}`);
         continue;
       }
       try {
         p.apply(fs.readFileSync(path.join(assets, hits[0]), "utf8"));
+        patchAnchors[p.id] = { state: "present", optional: p.optional === true };
       } catch (e) {
-        miss.push(`${p.id}: ${e.message}`);
+        miss(e.message);
       }
     }
     if (optionalMisses.length) log(`mod ${mod.name}: optional patches unavailable: ${optionalMisses.join("; ")}`);
-    verdicts[mod.name] = { ok: problems.length === 0, problems, ...(optionalMisses.length ? { optionalMisses } : {}) };
+    verdicts[mod.name] = { ok: problems.length === 0, problems, ...(optionalMisses.length ? { optionalMisses } : {}), patchAnchors };
     log(`mod ${mod.name}: ${problems.length ? "DISABLED " + problems.join("; ") : "ok"}`);
   }
   return verdicts;
@@ -275,30 +286,85 @@ function assetDirFor(electron) {
 function refreshMods(electron, opts) {
   const { mods, found, core } = loadMods(opts);
   const assetDir = assetDirFor(electron);
-  const status = verifyMods(assetDir, mods);
-  state().assetDir = assetDir;
-  for (const entry of [core, ...found]) {
-    if (!entry.usable && entry.enabled) status[entry.id] = { ok: false, problems: entry.problems };
-  }
+  const verdicts = verifyMods(assetDir, mods);
   const s = state();
-  s.status = status;
+  s.assetDir = assetDir;
+  s.entries = [core, ...found];
+  s.verdicts = verdicts;
   s.mods = mods;
-  s.catalog = [core, ...found].map((m) => ({
-    builtin: m === core,
-    id: m.id,
-    name: m.name,
-    version: m.version,
-    author: m.author,
-    description: m.description,
-    markdown: m.markdown,
-    kind: m.kind,
-    file: m.file,
-    enabled: m.enabled,
-    ok: m.enabled ? status[m.id]?.ok === true : null,
-    problems: [...m.problems.filter((p) => !status[m.id]?.problems?.includes(p)), ...(status[m.id]?.problems ?? [])],
-  }));
+  s.anchors = checkAnchors(mods, verdicts, assetDir);
+  applyStatuses();
   // Route the (possibly older) installed handler through this module's code.
   s.dispatch = (request, inner) => makeWrapped(inner, getMods)(request);
+}
+
+/** Static anchor results per loaded mod (runtime-only anchors come back "unknown" until probed). */
+function checkAnchors(mods, verdicts, assetDir) {
+  const out = {};
+  let chunkNames = [];
+  try {
+    chunkNames = fs.readdirSync(path.join(assetDir, "assets")).filter((f) => f.endsWith(".js"));
+  } catch {}
+  const readChunk = (name) => fs.readFileSync(path.join(assetDir, "assets", name), "utf8");
+  for (const mod of mods) out[mod.name] = anchorsLib.checkStatic(mod, { require, chunkNames, readChunk, patchResults: verdicts[mod.name]?.patchAnchors });
+  return out;
+}
+
+/**
+ * Work out every mod's status (the unified one in status.cjs) and what follows from it: s.status
+ * (which mods inject) and s.catalog (what the Mods window shows). Called on refresh and again when the
+ * renderer reports its probe results, so it only reads state and never touches T3.
+ */
+function applyStatuses() {
+  const s = state();
+  const status = {};
+  s.catalog = s.entries.map((entry) => {
+    const verdict = s.verdicts?.[entry.id];
+    const loaded = entry.usable && entry.enabled && verdict;
+    const anchors = loaded ? anchorsLib.withProbe(s.anchors?.[entry.id], s.probe?.[entry.id]) : null;
+    const st = statusLib.computeStatus({ anchors, ...statusLib.collectInputs(entry, { version: s.t3Version }) });
+    if (entry.enabled) {
+      if (!entry.usable) status[entry.id] = { ok: false, problems: entry.problems };
+      else if (verdict) {
+        // A required patch miss (verdict) and a blocking anchor miss (status) both keep the mod out.
+        const extra = st.injects ? [] : st.state === "anchors-missing" ? st.missing.filter((m) => !m.optional && m.kind !== "patch").map(statusLib.describeMissing) : [st.reason];
+        status[entry.id] = { ...verdict, ok: verdict.ok && st.injects, problems: [...verdict.problems, ...extra] };
+      }
+    }
+    const ok = entry.enabled ? status[entry.id]?.ok === true : null;
+    return {
+      builtin: entry === s.entries[0],
+      id: entry.id,
+      name: entry.name,
+      version: entry.version,
+      author: entry.author,
+      description: entry.description,
+      markdown: entry.markdown,
+      kind: entry.kind,
+      file: entry.file,
+      enabled: entry.enabled,
+      ok,
+      problems: [...entry.problems.filter((p) => !status[entry.id]?.problems?.includes(p)), ...(status[entry.id]?.problems ?? [])],
+      status: st,
+      probes: loaded ? anchorsLib.runtimeSpecs(s.mods.find((m) => m.name === entry.id)) : [],
+    };
+  });
+  s.status = status;
+}
+
+/**
+ * Take the Mods window's probe results (see src/core/client/probe.js) and fold them into every mod's
+ * status. A blocking runtime anchor that is gone stops the mod's main-process side right away; its
+ * already-patched renderer code only goes away at the next reload, and the loader never reloads by itself.
+ */
+function probeAnchors(electron, results) {
+  const s = state();
+  for (const m of s.catalog ?? []) {
+    if (!m.probes?.length || !results || !Object.hasOwn(results, m.id)) continue;
+    s.probe[m.id] = anchorsLib.sanitizeProbe(results[m.id], m.probes);
+  }
+  applyStatuses();
+  for (const name of Object.keys(s.owned)) if (!s.status[name]?.ok) releaseIpc(electron.ipcMain, name);
 }
 
 /** ipcMain that remembers what a mod registered, so unloading it can take the handlers back. */
@@ -357,6 +423,11 @@ function loaderApi(electron) {
   };
   const api = {
     list: view,
+    /** The Mods window reports what its probe found for runtime-only anchors (see probeAnchors). */
+    probe(results) {
+      probeAnchors(electron, results);
+      return view();
+    },
     rescan() {
       refreshMods(electron);
       setupMain(electron);
@@ -551,4 +622,4 @@ async function live({ reload = true } = {}) {
   return { status: s.status, log: s.log.slice(-15) };
 }
 
-module.exports = { live, cold, _internals: { patchChunk, verifyMods, loadMods, loaderApi } };
+module.exports = { live, cold, _internals: { patchChunk, verifyMods, loadMods, loaderApi, refreshMods, setupMain, state } };
