@@ -93,6 +93,8 @@ How it works:
 
 Before sending the signal, it checks that the process catches SIGUSR1, so the signal can never terminate T3. Run it again after editing a mod; module caches are cleared first.
 
+A live inject, with or without the window reload, does not interrupt work that is running in T3 (owner's observation, 2026-11-09). The reload only replaces the window's renderer code; the main-process loader is updated in place.
+
 ### Start T3 with mods (legacy inspector launcher)
 
 Kept for machines where patching is not wanted; the installer above replaces it.
