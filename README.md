@@ -132,6 +132,7 @@ mods/                 your mods: one folder or one .zip each
   - `/__t3mod/status.json` reports each mod's status.
 - A patch can be `optional: true`: if its anchor is missing it is skipped and logged, and the mod stays loaded (Commit Graph uses this for T3's diff component).
 - Patches are string-anchored. Minified identifiers are captured by regex, not hard-coded. Each mod is verified as a whole against the current bundle before it is enabled: if any required anchor is missing (e.g. after a T3 update), that mod turns itself off and T3 loads unmodified.
+- A mod lists what it depends on in T3 as `anchors` in its `mod.cjs` (patches count automatically). When the Mods window opens, the loader checks them and each loaded mod gets one status: compatible, incompatible, anchors missing (the gone anchors are named) or failed. A required anchor that is gone keeps the mod from injecting; one with a `fallback` leaves it running on that fallback. Format, what can be checked without injecting, and the read-only renderer probe: [docs/design/anchors.md](docs/design/anchors.md).
 - `main({ electron, ipcMain, log, isTrustedSender, loader })` runs in the main process to register IPC handlers. What a mod registers on `ipcMain` is tracked, so unloading it takes the handlers back.
 
 ## The Mods button
@@ -181,7 +182,7 @@ Mods are a folder or a zip, never both under one id; the first one found wins an
 ## Tests
 
 ```sh
-npm test                                    # git ops against a throwaway repo + bare remote, incl. hostile input; then zip/discovery/config tests; then asar patching and install/uninstall against a synthetic T3
+npm test                                    # git ops against a throwaway repo + bare remote, incl. hostile input; then zip/discovery/config tests; then asar patching and install/uninstall against a synthetic T3; then anchor declarations and checks, the unified mod status, and the renderer probe (stub T3, no real install)
 node test/patches.test.mjs <client dir>     # anchors + syntax of patched chunks, against an extracted app.asar
 ```
 
