@@ -14,7 +14,7 @@ if (!NS.commitGraph) {
   const STYLE_URL = new URL("./style.css", import.meta.url).href;
   const CHANNEL = "t3mod:commit-graph:git";
   const ROW_H = 24;
-  const LANE_W = 16;
+  const LANE_W = 12;
   const NODE_R = 4;
   const COLORS = ["#0085d9", "#d9008f", "#00d90a", "#d98500", "#a300d9", "#ff0000", "#00d9cc", "#e138e8", "#85d900", "#dc5b23", "#6f24d6", "#ffcc00"];
   const UNCOMMITTED = "#808080";
