@@ -3,7 +3,11 @@
 // previews its mod.md; Load/Unload reloads the window to apply the change.
 // Exposes globalThis.__t3mod.core = { icon, open, close }.
 
+import { scope } from "/__t3mod/kit.js";
+
 const NS = (globalThis.__t3mod ??= {});
+const S = scope("core"); // registration helpers: a failed setup is undone and reported to the loader
+S.run(() => {
 if (!NS.core) {
   const CHANNEL = "t3mod:core:ops";
   const STYLE_URL = new URL("./style.css", import.meta.url).href;
@@ -101,11 +105,7 @@ if (!NS.core) {
   const ensureStyle = () => {
     if (styleLoaded) return;
     styleLoaded = true;
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = STYLE_URL;
-    link.dataset.t3mod = "core";
-    document.head.appendChild(link);
+    S.style(STYLE_URL);
   };
 
   let modal = null;
@@ -140,7 +140,7 @@ if (!NS.core) {
     const $ = (sel) => root.querySelector(sel);
 
     const close = () => {
-      document.removeEventListener("keydown", onKey, true);
+      offKey();
       root.remove();
       modal = null;
       try {
@@ -222,7 +222,7 @@ if (!NS.core) {
             <div class="t3m-pv-title"><strong>${esc(sel.name)}</strong><span class="t3m-meta">${meta}</span></div>
             ${action}
           </div>
-          ${bad ? '<div class="t3m-warn">Loaded, but not active: it does not match this version of T3.</div>' : ""}
+          ${bad ? `<div class="t3m-warn">${sel.failure ? `Failed to load (${esc(sel.failure.phase)}): ${esc(sel.failure.reason)}. Everything it set up was undone.` : "Loaded, but not active: it does not match this version of T3."}</div>` : ""}
           ${problems}
           <div class="t3m-md">${sel.markdown ? markdown(sel.markdown) : '<p class="t3m-muted">This mod has no mod.md description.</p>'}</div>`;
       }
@@ -319,18 +319,19 @@ if (!NS.core) {
         render();
       }
     });
-    document.addEventListener("keydown", onKey, true);
-    document.body.appendChild(root);
+    const offKey = S.on(document, "keydown", onKey, true);
+    S.add(root);
     modal = { focus: () => dialog.focus() };
     render();
     dialog.focus();
     call("list");
   }
 
-  NS.core = {
+  S.global("core", {
     icon,
     open,
     close: () => document.querySelector(".t3m-backdrop [data-act=close]")?.click(),
     _markdown: markdown,
-  };
+  });
 }
+});

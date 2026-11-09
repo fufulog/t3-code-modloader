@@ -3,8 +3,8 @@
 // The renderer talks to the loader over t3mod:core:ops (list, rescan, setEnabled, apply, remove, openFolder).
 module.exports = {
   patches: require("./patches.cjs"),
-  main({ ipcMain, isTrustedSender, loader, log }) {
-    ipcMain.handle("t3mod:core:ops", async (event, payload) => {
+  main({ scope, isTrustedSender, loader, log }) {
+    scope.ipcHandle("t3mod:core:ops", async (event, payload) => {
       if (!isTrustedSender(event)) return { ok: false, error: "untrusted sender" };
       try {
         switch (payload?.op) {
