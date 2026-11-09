@@ -7,5 +7,6 @@
 // Main side: git.cjs answers whitelisted git operations over IPC.
 module.exports = {
   patches: require("./patches.cjs"),
+  anchors: require("./anchors.cjs"), // what this mod depends on in T3; see docs/design/anchors.md
   main: require("./git.cjs").register,
 };

@@ -13,11 +13,23 @@
 // Patching is all-or-nothing per mod: if any required anchor in any of a mod's
 // target chunks fails to match, that mod's patches are skipped everywhere and the
 // client keeps running unmodified.
+//
+// Injection is transactional (see scope.cjs): each mod's main-process setup runs in
+// its own scope of disposers. If it throws, or the mod's renderer reports a failed
+// setup, everything the mod registered is undone, the mod is marked failed (with a
+// short reason, see failures.cjs) and the other mods and T3 carry on. If the loader
+// itself cannot inject, everything it did is undone and T3 runs unmodified.
 
 const path = require("node:path");
 const fs = require("node:fs");
 const modsLib = require("./mods.cjs");
 const paths = require("./paths.cjs");
+const { createScope, modFacing } = require("./scope.cjs");
+// Loaded on first use: with no user mod enabled there is nothing to fail, check or report on, so the
+// no-mods path never reads these files (zero cost, see test/zero-cost.test.mjs).
+const failuresLib = () => require("./failures.cjs");
+const anchorsLibrary = () => require("./anchors.cjs");
+const statusLibrary = () => require("./status.cjs");
 
 const ROOT = path.resolve(__dirname, "../..");
 const STATE_KEY = "__t3modMain";
@@ -28,8 +40,20 @@ const CORE_ID = "core"; // built-in (src/core): the Mods button and modal. Alway
 function state() {
   const s = (globalThis[STATE_KEY] ??= { log: [], status: {}, csp: null, handlerInstalled: false });
   s.catalog ??= []; // fields added after a live-injected older version created the state
-  s.owned ??= {};
+  s.owned ??= {}; // legacy (pre-scope) IPC bookkeeping, still released on unload
+  s.scopes ??= {}; // mod id -> its main-process scope
+  s.loaderScope ??= createScope("loader", { onError: (m) => log(m) }); // what the loader itself registered (report handler, preload script)
+  s.entries ??= []; // every discovered mod (+ core): input of the unified status (see computeCatalog)
+  s.verdicts ??= {};
+  s.anchors ??= {};
+  s.probe ??= {};
   return s;
+}
+
+/** The per-mod failure records, created on first use. */
+function failures() {
+  const s = state();
+  return (s.failures ??= failuresLib().createFailures());
 }
 
 function log(...parts) {
@@ -60,6 +84,7 @@ function readEnabled(found) {
   } catch {}
   const first = new Set(found.filter((m) => m.usable).map((m) => m.id));
   writeEnabled(first);
+  state().createdConfig = configFile(); // a failed injection removes it again (see forgetCreatedConfig)
   return first;
 }
 
@@ -96,6 +121,7 @@ function loadMods({ all = false, t3Version } = {}) {
     } catch (e) {
       entry.usable = false;
       entry.problems.push(`failed to load: ${e.message}`);
+      entry.failure = failures().fail(entry.id, "load", e);
     }
   }
   return { mods, found, core };
@@ -141,21 +167,26 @@ function verifyMods(assetDir, mods) {
   for (const mod of mods) {
     const problems = [];
     const optionalMisses = [];
+    const patchAnchors = {}; // per patch id, for anchors.cjs (kind "patch")
     for (const p of mod.patches ?? []) {
-      const miss = p.optional ? optionalMisses : problems;
+      const miss = (reason) => {
+        (p.optional ? optionalMisses : problems).push(`${p.id}: ${reason}`);
+        patchAnchors[p.id] = { state: "missing", reason, optional: p.optional === true };
+      };
       const hits = files.filter((f) => p.file.test(f));
       if (hits.length !== 1) {
-        miss.push(`${p.id}: expected 1 chunk matching ${p.file}, found ${hits.length}`);
+        miss(`expected 1 chunk matching ${p.file}, found ${hits.length}`);
         continue;
       }
       try {
         p.apply(fs.readFileSync(path.join(assets, hits[0]), "utf8"));
+        patchAnchors[p.id] = { state: "present", optional: p.optional === true };
       } catch (e) {
-        miss.push(`${p.id}: ${e.message}`);
+        miss(e.message);
       }
     }
     if (optionalMisses.length) log(`mod ${mod.name}: optional patches unavailable: ${optionalMisses.join("; ")}`);
-    verdicts[mod.name] = { ok: problems.length === 0, problems, ...(optionalMisses.length ? { optionalMisses } : {}) };
+    verdicts[mod.name] = { ok: problems.length === 0, problems, ...(optionalMisses.length ? { optionalMisses } : {}), patchAnchors };
     log(`mod ${mod.name}: ${problems.length ? "DISABLED " + problems.join("; ") : "ok"}`);
   }
   return verdicts;
@@ -191,7 +222,11 @@ function serveModAsset(pathname, mods) {
   const rest = pathname.slice(MOD_PREFIX.length);
   if (rest === "status.json") {
     const s = state();
-    return new Response(JSON.stringify({ mods: s.status, log: s.log.slice(-30) }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    return new Response(JSON.stringify({ mods: s.status, loader: s.loaderError ? { failed: s.loaderError } : { ok: true }, log: s.log.slice(-30) }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  }
+  if (rest === "kit.js") {
+    // renderer-side registration helpers (see src/client/kit.js)
+    return new Response(fs.readFileSync(path.join(ROOT, "src/client/kit.js")), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" } });
   }
   if (rest === "chunks.json") {
     // T3's own chunk file names (hashed), so a mod can import() the same module instance T3 uses
@@ -287,81 +322,254 @@ function t3VersionOf(electron) {
 }
 
 function refreshMods(electron, opts) {
+  const s = state();
+  // main/load failures are re-derived on every scan; a renderer failure sticks until the mod is loaded or unloaded again
+  s.failures?.clear(undefined, ["load", "main"]);
   const { mods, found, core } = loadMods({ ...opts, t3Version: () => t3VersionOf(electron) });
   const assetDir = assetDirFor(electron);
-  const status = verifyMods(assetDir, mods);
-  state().assetDir = assetDir;
-  for (const entry of [core, ...found]) {
-    if (!entry.usable && entry.enabled) status[entry.id] = { ok: false, problems: entry.problems };
-    else if (entry.enabled && entry.compat && !entry.compat.compatible) status[entry.id] = { ok: false, problems: [entry.compat.reason] };
-  }
-  const s = state();
-  s.status = status;
-  s.mods = mods;
-  s.catalog = [core, ...found].map((m) => ({
-    builtin: m === core,
-    id: m.id,
-    name: m.name,
-    version: m.version,
-    author: m.author,
-    description: m.description,
-    markdown: m.markdown,
-    kind: m.kind,
-    file: m.file,
-    enabled: m.enabled,
-    compat: m.compat ?? { compatible: true },
-    ok: m.enabled ? status[m.id]?.ok === true : null,
-    problems: [...m.problems.filter((p) => !status[m.id]?.problems?.includes(p)), ...(status[m.id]?.problems ?? [])],
-  }));
+  const verdicts = verifyMods(assetDir, mods);
+  const next = { entries: [core, ...found], verdicts, mods, anchors: checkAnchors(mods, verdicts, assetDir), probe: s.probe };
+  const computed = computeCatalog(next); // may throw: nothing is committed until it has succeeded
+  Object.assign(s, next, computed, { assetDir });
   // Route the (possibly older) installed handler through this module's code.
   s.dispatch = (request, inner) => makeWrapped(inner, getMods)(request);
 }
 
-/** ipcMain that remembers what a mod registered, so unloading it can take the handlers back. */
-function trackedIpc(ipcMain, name) {
-  const mine = [];
-  const remember = (kind) => (channel, fn) => {
-    mine.push([kind, channel, fn]);
-    return ipcMain[kind](channel, fn);
-  };
-  const proxy = new Proxy(ipcMain, {
-    get: (t, k) => (k === "handle" || k === "on" || k === "once" ? remember(k) : typeof t[k] === "function" ? t[k].bind(t) : t[k]),
+/** Static anchor results per loaded user mod (runtime-only anchors come back "unknown" until probed). */
+function checkAnchors(mods, verdicts, assetDir) {
+  const out = {};
+  const user = mods.filter((m) => m.name !== CORE_ID);
+  if (!user.length) return out; // nothing to check: anchors.cjs is not even loaded
+  const anchorsLib = anchorsLibrary();
+  let chunkNames = [];
+  try {
+    chunkNames = fs.readdirSync(path.join(assetDir, "assets")).filter((f) => f.endsWith(".js"));
+  } catch {}
+  const readChunk = (name) => fs.readFileSync(path.join(assetDir, "assets", name), "utf8");
+  for (const mod of user) out[mod.name] = anchorsLib.checkStatic(mod, { require, chunkNames, readChunk, patchResults: verdicts[mod.name]?.patchAnchors });
+  return out;
+}
+
+/**
+ * THE status computation. Everything the Mods window shows about a mod, and which mods inject, comes
+ * from here: s.status (what injects, served as status.json) and s.catalog (what the window lists).
+ * Inputs: the discovered entries (with the compat manifest's verdict, `entry.compat`), the dry-run
+ * patch verdicts, static anchor results, the renderer's probe results and the failure records
+ * (failures.cjs). It is a pure function of its input, so it can be run again at any time without
+ * touching T3: after a scan, after a probe, after a failure.
+ */
+function computeCatalog({ entries, verdicts, anchors, probe, mods }) {
+  const status = {};
+  const core = entries.find((e) => e.id === CORE_ID);
+  const failureOf = (entry) => state().failures?.get(entry.id) ?? null;
+  // The built-in core is only evaluated if it failed; user mods whenever they are enabled. With none of those
+  // there is nothing to evaluate, and the status and anchor modules are not even loaded (zero cost).
+  const evaluates = (entry) => entry.enabled && (entry !== core || !!failureOf(entry));
+  const any = entries.some(evaluates);
+  const statusLib = any ? statusLibrary() : null;
+  const anchorsLib = any ? anchorsLibrary() : null;
+  const catalog = entries.map((entry) => {
+    const verdict = verdicts?.[entry.id];
+    const evaluated = evaluates(entry);
+    const failure = evaluated ? failureOf(entry) : null;
+    const loaded = evaluated && entry.usable && verdict;
+    const st = evaluated ? statusLib.computeStatus({ anchors: loaded ? anchorsLib.withProbe(anchors?.[entry.id], probe?.[entry.id]) : null, ...statusLib.inputsFor(entry, failure) }) : null;
+    if (entry.enabled) {
+      if (!st) status[entry.id] = verdict ? { ...verdict } : { ok: false, problems: entry.problems }; // core
+      else if (!entry.usable && !failure) status[entry.id] = { ok: false, problems: entry.problems }; // listed in config but not a usable mod
+      else {
+        // A required patch miss (verdict) and any blocking anchor miss (status) both keep the mod out; so do
+        // an incompatible declaration and a failure, which also never reach the patch step.
+        const extra = st.injects ? [] : st.state === "anchors-missing" ? st.missing.filter((m) => !m.optional && m.kind !== "patch").map(statusLib.describeMissing) : [st.reason];
+        status[entry.id] = { ...(verdict ?? {}), ok: !!verdict && verdict.ok && st.injects, problems: [...(verdict?.problems ?? []), ...extra], ...(failure ? { failure } : {}) };
+      }
+    }
+    return {
+      builtin: entry === core,
+      id: entry.id,
+      name: entry.name,
+      version: entry.version,
+      author: entry.author,
+      description: entry.description,
+      markdown: entry.markdown,
+      kind: entry.kind,
+      file: entry.file,
+      enabled: entry.enabled,
+      compat: entry.compat ?? { compatible: true },
+      ok: entry.enabled ? status[entry.id]?.ok === true : null,
+      failure: status[entry.id]?.failure ?? null,
+      problems: [...entry.problems.filter((p) => !status[entry.id]?.problems?.includes(p)), ...(status[entry.id]?.problems ?? [])],
+      status: st,
+      probes: loaded ? anchorsLib.runtimeSpecs(mods.find((m) => m.name === entry.id)) : [],
+    };
   });
-  state().owned[name] = mine;
-  return proxy;
+  return { status, catalog };
 }
 
-function releaseIpc(ipcMain, name) {
-  for (const [kind, channel, fn] of state().owned[name] ?? []) {
-    if (kind === "handle") ipcMain.removeHandler(channel);
-    else ipcMain.removeListener(channel, fn);
-  }
-  delete state().owned[name];
+/** Recompute status and catalog from the current state (after a probe or a failure). */
+function applyStatuses() {
+  Object.assign(state(), computeCatalog(state()));
 }
 
-function setupMain(electron) {
-  const { ipcMain, session } = electron;
-  const active = new Set(getMods().map((m) => m.name));
-  for (const name of Object.keys(state().owned)) if (!active.has(name) || !state().status[name]?.ok) releaseIpc(ipcMain, name);
-  for (const mod of getMods()) {
-    if (!state().status[mod.name]?.ok || typeof mod.main !== "function") continue;
-    releaseIpc(ipcMain, mod.name);
-    try {
-      mod.main({ electron, ipcMain: trackedIpc(ipcMain, mod.name), log: (...a) => log(`[${mod.name}]`, ...a), isTrustedSender, loader: loaderApi(electron) });
-    } catch (e) {
-      log(`mod ${mod.name} main() failed: ${e.stack ?? e}`);
-    }
-  }
-  const preload = path.join(__dirname, "preload.cjs");
+/**
+ * Take the Mods window's probe results (see src/core/client/probe.js) and fold them into every mod's
+ * status. A blocking runtime anchor that is gone takes the mod's main-process side away right away, through
+ * the same unload as any other cleanup; its already-patched renderer code only goes away at the next
+ * reload, and the loader never reloads by itself.
+ */
+function probeAnchors(electron, results) {
   const s = state();
-  if (!s.preloadId) {
-    try {
-      s.preloadId = session.defaultSession.registerPreloadScript({ type: "frame", filePath: preload, id: "t3mod-preload" });
-      log("preload registered");
-    } catch (e) {
-      log(`preload registration failed: ${e.message}`);
-    }
+  for (const m of s.catalog ?? []) {
+    if (!m.probes?.length || !results || !Object.hasOwn(results, m.id)) continue;
+    s.probe[m.id] = anchorsLibrary().sanitizeProbe(results[m.id], m.probes);
   }
+  applyStatuses();
+  unloadInactive(electron);
+}
+
+// ---- per-mod transactions ----------------------------------------------------
+
+/** ipcMain as a mod sees it: handle/on/once go through the mod's scope, so unloading takes them back. */
+function trackedIpc(ipcMain, scope) {
+  const tracked = {
+    handle: (channel, fn) => void scope.ipcHandle(ipcMain, channel, fn),
+    on: (channel, fn) => void scope.ipcOn(ipcMain, channel, fn, "on"),
+    once: (channel, fn) => void scope.ipcOn(ipcMain, channel, fn, "once"),
+  };
+  return new Proxy(ipcMain, { get: (t, k) => (Object.hasOwn(tracked, k) ? tracked[k] : typeof t[k] === "function" ? t[k].bind(t) : t[k]) });
+}
+
+/** Undo everything a mod registered in the main process. The one cleanup path: failure, unload, disable, hot reload. */
+function unloadMod(electron, id) {
+  const s = state();
+  const scope = s.scopes[id];
+  delete s.scopes[id];
+  scope?.dispose();
+  for (const [kind, channel, fn] of s.owned[id] ?? []) {
+    // handlers registered by an older loader version that tracked them in `owned`
+    if (kind === "handle") electron.ipcMain.removeHandler(channel);
+    else electron.ipcMain.removeListener(channel, fn);
+  }
+  delete s.owned[id];
+}
+
+/** A mod failed: undo all of it, mark it failed with the reason, leave everything else running. */
+function failMod(electron, id, phase, error) {
+  const s = state();
+  const failure = failures().fail(id, phase, error);
+  unloadMod(electron, id);
+  applyStatuses(); // the failure record makes this mod's status "failed"; nothing else re-enables it
+  log(`mod ${id} FAILED (${phase}): ${failure.reason}; everything it registered was undone`);
+  return failure;
+}
+
+/** Run one mod's main() inside its own scope; a throw or a rejected promise rolls the mod back. */
+function loadMain(electron, mod) {
+  const s = state();
+  const scope = createScope(mod.name, { onError: (m) => log(m) });
+  s.scopes[mod.name] = scope;
+  const fail = (e) => {
+    if (s.scopes[mod.name] !== scope) return; // already unloaded or reloaded
+    failMod(electron, mod.name, "main", e);
+  };
+  try {
+    const result = mod.main({
+      electron,
+      ipcMain: trackedIpc(electron.ipcMain, scope),
+      scope: modFacing(scope, electron.ipcMain),
+      log: (...a) => log(`[${mod.name}]`, ...a),
+      isTrustedSender,
+      loader: loaderApi(electron),
+    });
+    if (result && typeof result.then === "function") result.then(undefined, fail);
+  } catch (e) {
+    log(`mod ${mod.name} main() failed: ${e.stack ?? e}`);
+    fail(e);
+  }
+}
+
+/** Take back the main-process side of every mod that is no longer meant to run (unloaded, failed, anchors gone). */
+function unloadInactive(electron) {
+  const s = state();
+  const active = new Set(getMods().map((m) => m.name));
+  for (const name of new Set([...Object.keys(s.scopes), ...Object.keys(s.owned)])) if (!active.has(name) || !s.status[name]?.ok) unloadMod(electron, name);
+}
+
+function setupMain(electron, tx) {
+  const s = state();
+  unloadInactive(electron);
+  for (const mod of getMods()) {
+    if (!s.status[mod.name]?.ok || typeof mod.main !== "function") continue;
+    unloadMod(electron, mod.name);
+    loadMain(electron, mod);
+  }
+  // Loader-owned registrations: if anything here throws, the caller rolls the whole loader back.
+  const loaderScope = tx ?? s.loaderScope;
+  // Only user mods can report a renderer failure, so with none enabled there is no handler to register.
+  if (!s.reportHandled && getMods().some((m) => m.name !== CORE_ID && s.status[m.name]?.ok)) {
+    loaderScope.ipcHandle(electron.ipcMain, REPORT_CHANNEL, (event, payload) => reportFromRenderer(electron, event, payload));
+    s.reportHandled = true;
+    loaderScope.defer(() => (s.reportHandled = false), "report flag");
+  }
+  if (!s.preloadId) {
+    const session = electron.session.defaultSession;
+    const id = session.registerPreloadScript({ type: "frame", filePath: path.join(__dirname, "preload.cjs"), id: "t3mod-preload" });
+    s.preloadId = id;
+    loaderScope.defer(() => {
+      s.preloadId = null;
+      session.unregisterPreloadScript?.(id);
+    }, "preload script");
+    log("preload registered");
+  }
+}
+
+const REPORT_CHANNEL = "t3mod:loader:report";
+
+/** A mod's renderer runtime says its setup failed (it already undid its own renderer side). */
+function reportFromRenderer(electron, event, payload) {
+  if (!isTrustedSender(event)) return { ok: false, error: "untrusted sender" };
+  const id = payload?.mod;
+  if (typeof id !== "string" || !state().status[id]) return { ok: false, error: "unknown mod" };
+  if (payload.phase !== "renderer" || typeof payload.error !== "string") return { ok: false, error: "bad arguments" };
+  failMod(electron, id, "renderer", payload.error);
+  return { ok: true };
+}
+
+/** Injection failed: a config.json that only this run created goes away again (and its folder, if empty). */
+function forgetCreatedConfig(undo) {
+  const s = state();
+  const file = s.createdConfig;
+  s.createdConfig = null;
+  if (!undo || !file) return;
+  try {
+    fs.rmSync(file, { force: true });
+    fs.rmdirSync(path.dirname(file));
+  } catch {}
+}
+
+function resetLoaderScope() {
+  const s = state();
+  s.loaderScope?.dispose();
+  s.loaderScope = createScope("loader", { onError: (m) => log(m) });
+}
+
+/**
+ * The loader could not inject: undo every mod and everything the loader registered, and make
+ * the t3code:// handler pass requests straight through, so T3 runs unmodified.
+ */
+function deactivate(electron, tx, error) {
+  const s = state();
+  for (const id of new Set([...Object.keys(s.scopes), ...Object.keys(s.owned)])) unloadMod(electron, id);
+  tx?.dispose();
+  resetLoaderScope();
+  s.removed = true;
+  s.mods = [];
+  s.entries = []; // nothing left to compute a status from
+  s.status = {};
+  s.catalog = [];
+  s.loaderError = failuresLib().shortReason(error);
+  forgetCreatedConfig(true);
+  log(`loader FAILED: ${s.loaderError}; T3 runs unmodified`);
 }
 
 /** What the built-in Mods modal may ask of the loader (reached over IPC by src/core). */
@@ -373,6 +581,11 @@ function loaderApi(electron) {
   };
   const api = {
     list: view,
+    /** The Mods window reports what its probe found for runtime-only anchors (see probeAnchors). */
+    probe(results) {
+      probeAnchors(electron, results);
+      return view();
+    },
     rescan() {
       refreshMods(electron);
       setupMain(electron);
@@ -391,6 +604,7 @@ function loaderApi(electron) {
         if (entry.builtin) throw new Error("the modloader's own UI cannot be unloaded; use Remove modloader");
         if (enabled.has(id) === on) continue;
         on ? enabled.add(id) : enabled.delete(id);
+        state().failures?.clear(id); // a fresh load attempt after the window reloads
         done.push(`${on ? "loaded" : "unloaded"} ${id}`);
       }
       if (!done.length) return view();
@@ -417,14 +631,16 @@ function loaderApi(electron) {
       const loaded = s.catalog.filter((m) => m.enabled && !m.builtin);
       writeEnabled(new Set());
       for (const m of loaded) {
-        releaseIpc(electron.ipcMain, m.id);
+        unloadMod(electron, m.id);
         step(`Unloaded ${m.name}`);
       }
       if (!loaded.length) step("No mods were loaded");
       s.removed = true;
       s.mods = [];
+      s.entries = [];
       s.status = {};
-      for (const name of Object.keys(s.owned)) releaseIpc(electron.ipcMain, name);
+      for (const name of new Set([...Object.keys(s.scopes), ...Object.keys(s.owned)])) unloadMod(electron, name);
+      resetLoaderScope(); // report handler, preload script
       step("Removed the Mods window and button");
       try {
         steps.push(...installer().uninstall({ log: (m) => log(m) }));
@@ -467,61 +683,78 @@ function isTrustedSender(event) {
 // electron.protocol.handle so T3's own t3code:// handler is patched as it
 // registers. (NODE_OPTIONS --require is ignored by Electron in packaged apps.)
 
-function cold({ launcher } = {}) {
-  if (process.type !== "browser") return { skipped: "not the main process" };
-  const electron = require("electron");
+function cold({ launcher, electron: injected } = {}) {
+  if (!injected && process.type !== "browser") return { skipped: "not the main process" };
+  const electron = injected ?? require("electron");
   const s = state();
   if (s.cold) return { skipped: "already" };
   s.cold = true;
-  if (launcher) relaunchThroughLauncher(launcher);
+  const tx = createScope("loader", { onError: (m) => log(m) }); // undone as a whole if the hooks cannot be installed
 
-  // Mod main() needs both an app that is ready and verified mods (verification
-  // happens when T3 registers its protocol, usually inside whenReady).
-  let ready = false, setupDone = false;
-  const trySetup = () => {
-    if (setupDone || !ready || !state().dispatch) return;
-    setupDone = true;
-    try {
-      setupMain(electron);
-    } catch (e) {
-      log(`setup failed: ${e.stack ?? e}`);
-    }
-  };
-  const protocol = electron.protocol;
-  const original = protocol.handle.bind(protocol);
-  protocol.handle = (scheme, handler) => {
-    if (!SCHEMES.has(scheme)) return original(scheme, handler);
-    try {
-      refreshMods(electron);
-    } catch (e) {
-      log(`mod load failed: ${e.stack ?? e}`);
-    }
-    if (!state().dispatch) return original(scheme, handler);
-    s.handlerInstalled = true;
-    const result = original(scheme, (request) => {
+  try {
+    if (launcher) tx.defer(relaunchThroughLauncher(launcher), "launcher spawn hook");
+
+    // Mod main() needs both an app that is ready and verified mods (verification
+    // happens when T3 registers its protocol, usually inside whenReady).
+    let ready = false, setupDone = false;
+    const trySetup = () => {
+      if (setupDone || !ready || !state().dispatch) return;
+      setupDone = true;
+      const attempt = createScope("loader", { onError: (m) => log(m) });
       try {
-        return state().dispatch(request, handler);
-      } catch {
-        return handler(request);
+        setupMain(electron, attempt);
+        s.loaderScope.adopt(attempt);
+        forgetCreatedConfig(false);
+      } catch (e) {
+        log(`setup failed: ${e.stack ?? e}`);
+        deactivate(electron, attempt, e);
       }
+    };
+    const protocol = electron.protocol;
+    const originalHandle = protocol.handle;
+    const original = originalHandle.bind(protocol);
+    protocol.handle = (scheme, handler) => {
+      if (!SCHEMES.has(scheme)) return original(scheme, handler);
+      try {
+        refreshMods(electron);
+      } catch (e) {
+        log(`mod load failed: ${e.stack ?? e}`);
+      }
+      if (!state().dispatch) return original(scheme, handler);
+      s.handlerInstalled = true;
+      const result = original(scheme, (request) => {
+        try {
+          return state().dispatch(request, handler);
+        } catch {
+          return handler(request);
+        }
+      });
+      trySetup();
+      return result;
+    };
+    tx.defer(() => (protocol.handle = originalHandle), "protocol.handle hook");
+    electron.app.whenReady().then(() => {
+      ready = true;
+      trySetup();
     });
-    trySetup();
-    return result;
-  };
-  electron.app.whenReady().then(() => {
-    ready = true;
-    trySetup();
-  });
-  log("cold start hooks installed");
+    log("cold start hooks installed");
+  } catch (e) {
+    tx.dispose();
+    s.cold = false;
+    log(`cold start FAILED: ${e.message}; T3 runs unmodified`);
+    throw e;
+  }
+  // The hooks stay for the life of the process; their undo is kept so Remove modloader can run it.
+  s.loaderScope.adopt(tx);
   return { ok: true };
 }
 
 /**
  * The AppImage updater starts the new AppImage itself (spawn(destination)).
- * Route that through the launcher so mods survive auto-updates.
+ * Route that through the launcher so mods survive auto-updates. Returns the undo.
  */
 function relaunchThroughLauncher(launcher) {
-  if (!fs.existsSync(launcher)) return;
+  if (!fs.existsSync(launcher)) return () => {};
   const cp = require("node:child_process");
   const orig = cp.spawn;
   cp.spawn = function (file, args, opts) {
@@ -533,38 +766,77 @@ function relaunchThroughLauncher(launcher) {
   };
   // ESM `import { spawn } from "node:child_process"` reads a snapshot; refresh it.
   require("node:module").syncBuiltinESMExports();
+  return () => {
+    if (cp.spawn !== orig) cp.spawn = orig;
+    require("node:module").syncBuiltinESMExports();
+  };
 }
 
 // ---- live injection ---------------------------------------------------------
 
-async function live({ reload = true } = {}) {
-  const electron = require("electron");
+async function live({ reload = true, electron: injected } = {}) {
+  const electron = injected ?? require("electron");
   const { protocol, net } = electron;
   const s = state();
-  s.removed = false;
-  refreshMods(electron);
-
-  if (!s.handlerInstalled) {
-    // Capture the CSP T3 attaches to its documents before replacing the handler.
-    try {
-      const res = await net.fetch("t3code://app/index.html", { headers: { accept: "text/html" } });
-      s.csp = res.headers.get("content-security-policy");
-      await res.arrayBuffer();
-    } catch (e) {
-      log(`csp capture failed: ${e.message}`);
+  const tx = createScope("loader", { onError: (m) => log(m) }); // loader-owned registrations of this run
+  s.createdConfig = null;
+  let touched = false; // past this point earlier state may have been changed
+  try {
+    refreshMods(electron); // assigns state only when it fully succeeded
+    let inner = null;
+    if (!s.handlerInstalled) {
+      // Capture the CSP T3 attaches to its documents before replacing the handler.
+      let csp = null;
+      try {
+        const res = await net.fetch("t3code://app/index.html", { headers: { accept: "text/html" } });
+        csp = res.headers.get("content-security-policy");
+        await res.arrayBuffer();
+      } catch (e) {
+        log(`csp capture failed: ${e.message}`);
+      }
+      if (!csp) throw new Error("could not capture T3's content-security-policy; refusing to replace the handler without it");
+      s.csp = csp;
+      s.assetDir = assetDirFor(electron);
+      inner = makeStaticHandler(s.assetDir, csp);
     }
-    if (!s.csp) throw new Error("could not capture T3's content-security-policy; refusing to replace the handler without it");
-    s.assetDir = assetDirFor(electron);
-    const inner = makeStaticHandler(s.assetDir, s.csp);
-    protocol.unhandle("t3code");
-    protocol.handle("t3code", (request) => state().dispatch(request, inner));
-    s.handlerInstalled = true;
-    log("live handler installed");
+    touched = true;
+    s.removed = false;
+    setupMain(electron, tx);
+    if (inner) {
+      // Last step, so a failure before it leaves T3's own handler in place. unhandle + handle is
+      // the one swap that cannot be undone to the original; if handle() throws, a plain static
+      // handler (same files, same CSP, no patches) goes in so T3 keeps serving.
+      protocol.unhandle("t3code");
+      try {
+        protocol.handle("t3code", (request) => state().dispatch(request, inner));
+      } catch (e) {
+        try {
+          protocol.handle("t3code", inner);
+          log("fell back to a plain static handler");
+        } catch (e2) {
+          log(`CRITICAL: could not restore a t3code:// handler: ${e2.message}`);
+        }
+        throw e;
+      }
+      s.handlerInstalled = true;
+      log("live handler installed");
+    }
+    s.loaderScope.adopt(tx);
+    s.loaderError = null;
+    forgetCreatedConfig(false);
+  } catch (e) {
+    if (touched) deactivate(electron, tx, e);
+    else {
+      tx.dispose();
+      s.loaderError = failuresLib().shortReason(e);
+      forgetCreatedConfig(true);
+      log(`loader FAILED before changing anything: ${s.loaderError}`);
+    }
+    throw e;
   }
-  setupMain(electron);
 
   if (reload) reloadWindows(electron);
   return { status: s.status, log: s.log.slice(-15) };
 }
 
-module.exports = { live, cold, _internals: { patchChunk, verifyMods, loadMods, loaderApi } };
+module.exports = { live, cold, _internals: { patchChunk, verifyMods, loadMods, loaderApi, setupMain, refreshMods, applyStatuses, failMod, unloadMod, state } };

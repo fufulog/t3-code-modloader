@@ -535,9 +535,8 @@ async function dispatch(payload) {
   throw new UserError(`unknown op ${op}`);
 }
 
-module.exports.register = ({ ipcMain, isTrustedSender, log: say }) => {
-  ipcMain.removeHandler(CHANNEL);
-  ipcMain.handle(CHANNEL, async (event, payload) => {
+module.exports.register = ({ scope, isTrustedSender, log: say }) => {
+  scope.ipcHandle(CHANNEL, async (event, payload) => {
     if (!isTrustedSender(event)) return { ok: false, error: "untrusted sender" };
     const started = Date.now();
     try {
