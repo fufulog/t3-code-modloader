@@ -20,8 +20,8 @@ The goal is that after T3 updates itself, mods are back without the user doing a
 | Platform | Approach | Status |
 | --- | --- | --- |
 | Linux (incl. Omarchy) | Updating T3 kept the modloader and mods. Confirmed by the owner on Omarchy, 2026-11-08. No watcher needed. | `[x]` done |
-| macOS | Probably possible without a standing watcher by hooking the update step like on Linux. Needs research into how the macOS updater swaps the app, code signing, and quarantine. | `[?]` |
-| Windows | Needs a watcher. See below. | `[?]` |
+| macOS | Probably possible without a standing watcher by hooking the update step like on Linux. Needs research into how the macOS updater swaps the app, code signing, and quarantine. | `[?]` design in [docs/design/update-survival.md](docs/design/update-survival.md) (832de13), spikes pending |
+| Windows | Needs a watcher. See below. | `[?]` design in [docs/design/update-survival.md](docs/design/update-survival.md) (832de13), owner decisions pending |
 
 ### Windows watcher: things to settle first
 
@@ -37,13 +37,13 @@ The goal is that after T3 updates itself, mods are back without the user doing a
 
 How these three fit together: a mod's state in the Mods window is worked out when the window opens, from three sources. The first is what the mod declares (known-incompatible versions), the second is a check of whether the mod's anchors still exist in the running T3, and the third is whether injection failed. One status, one place.
 
-- [ ] **Compatibility manifest: assume compatible, declare incompatible.** A mod is treated as compatible with every T3 version unless it says otherwise. The manifest lists only known-bad versions, segmented by T3 major version (e.g. "not compatible with 2.x"). We do not make mod authors list every version they tested.
+- [x] **Compatibility manifest: assume compatible, declare incompatible.** *(landed in 6fb2be7)* A mod is treated as compatible with every T3 version unless it says otherwise. The manifest lists only known-bad versions, segmented by T3 major version (e.g. "not compatible with 2.x"). We do not make mod authors list every version they tested.
   - Open: exact manifest field and range syntax (major only, or major plus optional minor/patch exclusions).
-- [ ] **Failure to inject, with full cleanup.** The simplest and most important failure: a mod could not be injected. Anything that mod already injected must be undone, so a failed mod leaves T3 exactly as if it had never been loaded.
+- [x] **Failure to inject, with full cleanup.** *(landed in 6367128)* The simplest and most important failure: a mod could not be injected. Anything that mod already injected must be undone, so a failed mod leaves T3 exactly as if it had never been loaded.
   - Treat each mod's injection as a transaction. Everything it registers (listeners, patched functions, DOM, styles, IPC handlers) records how to undo itself. On failure, undo in reverse order.
   - Other mods and T3 keep running. The failed mod shows as failed in the list, with the reason.
   - Open: how to guarantee cleanup for things a mod does by hand, outside our registration helpers. Likely a rule that mods may only change T3 through the helpers, plus a test mod that fails halfway at each stage.
-- [ ] **Anchor-miss detection, evaluated when the Mods window opens.** A mod declares the anchors it depends on in T3 (the places it hooks into). When the window opens, the loader checks them against the running T3 and marks the mod compatible or "anchors missing", naming which anchor is gone. This is the higher-level version of failure handling: the user sees a mod is broken by an update before it misbehaves.
+- [x] **Anchor-miss detection, evaluated when the Mods window opens.** *(landed in 6367128)* A mod declares the anchors it depends on in T3 (the places it hooks into). When the window opens, the loader checks them against the running T3 and marks the mod compatible or "anchors missing", naming which anchor is gone. This is the higher-level version of failure handling: the user sees a mod is broken by an update before it misbehaves.
   - A mod with missing anchors does not inject (or falls back where it supports that, like Commit Graph's plain diff), and the Mods window explains what changed.
   - Open: which anchors can be checked without injecting (static checks on the entry file and bundle) and which only exist at runtime (renderer DOM and React props). Runtime-only anchors may need a safe dry run.
 - [ ] **Capability list.** Each mod declares what it touches (main process, renderer, network, files, git, running commands). The Mods window shows it before the mod is enabled.
@@ -79,7 +79,7 @@ Check which of these mods can already do, then fill the gaps. Prefer a small reg
 
 ## 6. Quality
 
-- [ ] **Zero-cost-with-no-mods gate (must have).** A test that fails if the loader does any work when no mods are installed or enabled. It runs as a pre-push check and the same test runs in CI, so a regression cannot be pushed.
+- [x] **Zero-cost-with-no-mods gate (must have).** *(landed in 47c16f3)* A test that fails if the loader does any work when no mods are installed or enabled. It runs as a pre-push check and the same test runs in CI, so a regression cannot be pushed.
   - Test the structure, not just the clock: with no mods, nothing is injected, no listeners, timers, watchers or IPC handlers are registered, and the inspector is never opened. Startup time is noisy, so use it only as a loose budget on top.
   - It should run against a stub T3, so the pre-push hook works on any machine without a T3 install.
   - Open: how the pre-push hook is installed for a fresh clone (a script, or a tracked hooks directory).
