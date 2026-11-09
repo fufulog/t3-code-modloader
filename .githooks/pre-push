@@ -3,5 +3,7 @@
 # (test/zero-cost.test.mjs). Installed once per clone: node bin/setup-hooks.mjs
 # Bypass in an emergency with `git push --no-verify`; CI runs the same suite anyway.
 cd "$(git rev-parse --show-toplevel)" || exit 1
+# Git may export GIT_DIR and friends to hooks; the git tests build their own throwaway repos.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR
 echo "pre-push: npm test (includes the zero-cost-with-no-mods gate)"
 exec npm test --silent
