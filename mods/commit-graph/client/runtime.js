@@ -5,7 +5,11 @@
 // The view itself is plain DOM inside one React host element, so it does not
 // depend on T3's React internals beyond the props the patch passes in.
 
+import { scope } from "/__t3mod/kit.js";
+
 const NS = (globalThis.__t3mod ??= {});
+const S = scope("commit-graph"); // registration helpers: a failed setup is undone and reported to the loader
+S.run(() => {
 if (!NS.commitGraph) {
   const STYLE_URL = new URL("./style.css", import.meta.url).href;
   const CHANNEL = "t3mod:commit-graph:git";
@@ -178,11 +182,7 @@ if (!NS.commitGraph) {
   function ensureStyle() {
     if (styleLoaded) return;
     styleLoaded = true;
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = STYLE_URL;
-    link.dataset.t3mod = "commit-graph";
-    document.head.appendChild(link);
+    S.style(STYLE_URL);
   }
 
   // ---- graph layout ---------------------------------------------------------------
@@ -1661,5 +1661,6 @@ if (!NS.commitGraph) {
     return props.jsx("div", { ref, className: "t3cg-host", "data-t3mod": "commit-graph", children: portals.map((p) => p.render()) });
   }
 
-  NS.commitGraph = { Surface, Icon, menuItems, bindOpener, _layout: layout, _GraphView: GraphView, _dialog: dialog };
+  S.global("commitGraph", { Surface, Icon, menuItems, bindOpener, _layout: layout, _GraphView: GraphView, _dialog: dialog });
 }
+});

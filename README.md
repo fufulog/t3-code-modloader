@@ -122,6 +122,9 @@ src/main/loader.cjs   protocol interception, chunk patching, mod asset serving, 
 src/main/mods.cjs     finds mods (folder or zip) and runs their code from memory
 src/main/zip.cjs      the zip reader/writer
 src/main/preload.cjs  exposes window.t3mod.invoke(channel, payload); channels must match t3mod:<mod>:<name>
+src/main/scope.cjs    the disposer stack behind the registration helpers (transactional injection)
+src/main/failures.cjs the per-mod "failed" status (phase + short reason) the Mods window reads
+src/client/kit.js     renderer-side registration helpers, served at /__t3mod/kit.js
 src/core/             built in: the Mods button and modal (always loaded)
 mods/                 your mods: one folder or one .zip each
 ```
@@ -132,7 +135,7 @@ mods/                 your mods: one folder or one .zip each
   - `/__t3mod/status.json` reports each mod's status.
 - A patch can be `optional: true`: if its anchor is missing it is skipped and logged, and the mod stays loaded (Commit Graph uses this for T3's diff component).
 - Patches are string-anchored. Minified identifiers are captured by regex, not hard-coded. Each mod is verified as a whole against the current bundle before it is enabled: if any required anchor is missing (e.g. after a T3 update), that mod turns itself off and T3 loads unmodified.
-- `main({ electron, ipcMain, log, isTrustedSender, loader })` runs in the main process to register IPC handlers. What a mod registers on `ipcMain` is tracked, so unloading it takes the handlers back.
+- `main({ electron, ipcMain, scope, log, isTrustedSender, loader })` runs in the main process. Everything a mod changes goes through `scope` (see "Mod registration helpers"), so unloading, disabling, hot reload and a failed load all undo it the same way.
 
 ## The Mods button
 
@@ -184,6 +187,40 @@ On a T3 whose major is listed, the mod is not loaded and stays off. The Mods win
 
 Mods are a folder or a zip, never both under one id; the first one found wins and the other is reported as a duplicate in the modal.
 
+### Mod registration helpers
+
+A mod must change T3 only through these helpers. Each does the change and records its undo, so a mod that fails halfway leaves T3 as if it had never loaded, and unload, disable and hot reload run the same undo.
+
+Main process, `main({ scope })`:
+
+```js
+scope.ipcHandle(channel, fn)          // ipcMain.handle; removed on undo (ipcOn / ipcOnce for listeners)
+scope.on(emitter, event, fn)          // app, webContents, windows, process...; listener removed
+scope.patch(obj, key, (orig) => fn)   // replace a function; original restored (pass-through if someone wrapped it since)
+scope.timeout(fn, ms) / scope.interval(fn, ms)
+scope.window(() => new BrowserWindow(...))   // destroyed on undo
+scope.defer(() => { ... })            // anything else: files, child processes, your own state
+```
+
+Renderer, in `client/runtime.js` (`import { scope } from "/__t3mod/kit.js"`):
+
+```js
+const S = scope("my-mod");
+S.run(() => {                         // a throw or rejection undoes everything below and reports the failure
+  S.style(new URL("./style.css", import.meta.url).href);   // or S.style({ css })
+  const el = S.add(document.createElement("div"));         // appended to <body>, removed on undo
+  S.on(window, "focus", fn);          // S.timeout, S.interval, S.patch, S.defer work as above
+  S.global("myMod", api);             // globalThis.__t3mod.myMod, for the patched chunks
+});
+```
+
+Rules:
+
+- Undo runs newest first. A disposer that throws is logged and the rest still run. Every helper returns its own undo function if you want to release early.
+- If `mod.cjs` throws, `main()` throws or rejects, or the renderer setup fails, the mod shows as **failed** in the Mods window with a short reason (`failure: { phase, reason }` in the list data; phase is `load`, `main` or `renderer`). Its main-process and renderer registrations are undone, its patches stop being applied on the next reload, and other mods and T3 keep running.
+- Not covered: anything done outside the helpers (top-level code in `mod.cjs` that registers things, a listener added straight on `electron`, a global set by hand, files written without `defer`). The loader cannot see those, so a failing mod can leave them behind.
+- If the loader itself cannot inject (no preload script, no usable protocol handler, an exception while setting up), it undoes everything it registered, unloads every mod and passes `t3code://` requests straight through, so T3 runs unmodified. The reason is in `/__t3mod/status.json` under `loader`.
+
 ## Skills
 
 `skills/t3-create-mod` walks an agent through making a mod; `skills/t3-mod-styleguide` holds the UI rules it points to. Copy or symlink them into `~/.claude/skills/` (or a project's `.claude/skills/`) to use them.
@@ -191,7 +228,7 @@ Mods are a folder or a zip, never both under one id; the first one found wins an
 ## Tests
 
 ```sh
-npm test                                    # git ops against a throwaway repo + bare remote, incl. hostile input; then zip/discovery/config tests; then asar patching and install/uninstall against a synthetic T3
+npm test                                    # git ops against a throwaway repo + bare remote, incl. hostile input; then zip/discovery/config tests; then asar patching and install/uninstall against a synthetic T3; then transactional injection (fixture mods that fail at every stage, against a fake Electron)
 node test/patches.test.mjs <client dir>     # anchors + syntax of patched chunks, against an extracted app.asar
 ```
 
