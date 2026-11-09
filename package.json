@@ -7,7 +7,7 @@
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
-    "test": "node test/git.test.mjs && node test/mods.test.mjs && node test/install.test.mjs && node test/zero-cost.test.mjs && node test/hooks.test.mjs",
+    "test": "node test/git.test.mjs && node test/mods.test.mjs && node test/compat.test.mjs && node test/install.test.mjs && node test/zero-cost.test.mjs && node test/hooks.test.mjs",
     "test:gate": "node test/zero-cost.test.mjs",
     "setup-hooks": "node bin/setup-hooks.mjs",
     "test:patches": "node test/patches.test.mjs",

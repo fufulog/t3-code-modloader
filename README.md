@@ -172,6 +172,16 @@ What it does.
 node bin/t3mod-pack.mjs mods/my-mod            # writes mods/my-mod.zip
 ```
 
+### Declaring incompatible T3 versions
+
+A mod is assumed compatible with every T3 version. To say otherwise, list the T3 **major** versions it is known not to work with in `mod.md`:
+
+```markdown
+incompatible-t3-majors: 2, 3     # also accepted: [2, 3] or a single 2
+```
+
+On a T3 whose major is listed, the mod is not loaded and stays off. The Mods window marks it "not active" and shows "Not compatible with T3 2.x". Other majors are unaffected. The check fails open: a malformed value or a T3 version the loader cannot read counts as compatible (a warning goes to the log). The running version comes from the app's `getVersion()`.
+
 Mods are a folder or a zip, never both under one id; the first one found wins and the other is reported as a duplicate in the modal.
 
 ## Skills

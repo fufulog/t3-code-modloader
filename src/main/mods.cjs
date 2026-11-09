@@ -85,7 +85,7 @@ function inspect(location, seen = new Set()) {
   const name = path.basename(location);
   const isZip = /\.(zip|t3mod)$/i.test(name) && fs.statSync(location).isFile();
   const base = isZip ? name.replace(/\.(zip|t3mod)$/i, "") : name;
-  const entry = { id: base.toLowerCase(), location, file: name, kind: isZip ? "zip" : "folder", problems: [], usable: false, files: null, name: base, version: "", author: "", description: "", markdown: "" };
+  const entry = { id: base.toLowerCase(), location, file: name, kind: isZip ? "zip" : "folder", problems: [], usable: false, files: null, name: base, version: "", author: "", description: "", markdown: "", meta: {} };
   try {
     entry.files = isZip ? zipFiles(location) : dirFiles(location);
     const manifestBuf = entry.files.read("mod.md");
@@ -99,6 +99,7 @@ function inspect(location, seen = new Set()) {
       entry.author = meta.author ?? "";
       entry.description = meta.description ?? "";
       entry.markdown = body;
+      entry.meta = meta;
     }
     if (!ID_RE.test(entry.id)) throw new Error(`invalid mod id "${entry.id}" (lowercase letters, digits and dashes)`);
     if (seen.has(entry.id)) throw new Error(`duplicate mod id "${entry.id}" (already provided by another file)`);

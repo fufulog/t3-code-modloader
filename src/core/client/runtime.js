@@ -222,7 +222,7 @@ if (!NS.core) {
             <div class="t3m-pv-title"><strong>${esc(sel.name)}</strong><span class="t3m-meta">${meta}</span></div>
             ${action}
           </div>
-          ${bad ? '<div class="t3m-warn">Loaded, but not active: it does not match this version of T3.</div>' : ""}
+          ${bad ? `<div class="t3m-warn">${sel.compat?.compatible === false ? esc(sel.compat.reason) + ": loaded, but not active." : "Loaded, but not active: it does not match this version of T3."}</div>` : ""}
           ${problems}
           <div class="t3m-md">${sel.markdown ? markdown(sel.markdown) : '<p class="t3m-muted">This mod has no mod.md description.</p>'}</div>`;
       }
