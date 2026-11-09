@@ -6,6 +6,10 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// Inherited GIT_DIR / GIT_WORK_TREE (set by git for hooks, or by an agent) would point every
+// git call below, including `git init` and `git config`, at the real repository. Drop them.
+for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
+
 const require = createRequire(import.meta.url);
 const { dispatch } = require("../mods/commit-graph/git.cjs")._test;
 
