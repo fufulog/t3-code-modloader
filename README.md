@@ -187,6 +187,23 @@ node test/patches.test.mjs <client dir>     # anchors + syntax of patched chunks
 
 To get a client dir: `npx @electron/asar extract <mount>/resources/app.asar out`, then use `out/apps/server/dist/client`.
 
+### Zero-cost-with-no-mods gate
+
+`test/zero-cost.test.mjs` fails if the loader does any work when no user mods are enabled. It runs the real loader against a stub T3 (fake Electron app, ipcMain, protocol, session and net in a temp directory; no real T3 needed) and compares everything the loader did with a reviewed allowlist (`BASELINE` in that file): no timers, listeners, file watchers, file writes, child processes, network, workers, inspector or signals, and only the IPC channel, preload and protocol handler the built-in `core` mod needs for the Mods button. Startup time is checked against a loose budget that only warns (`T3MOD_GATE_TIMING=strict` makes it fail). Run it alone with `npm run test:gate`. If you add work to that path on purpose, update `BASELINE` in the same commit and say why.
+
+"No mods" means `mods/` is empty or holds mods that are not enabled. The `core` mod is not a user mod: it owns the Mods button, which is the only way to enable anything.
+
+### Pre-push hook and CI
+
+The suite, including the gate, runs on every push and pull request in CI (`.github/workflows/test.yml`, Node 22). To run it before every `git push` from your own clone, install the tracked hook once:
+
+```sh
+node bin/setup-hooks.mjs            # sets core.hooksPath = .githooks for this repo (npm run setup-hooks does the same)
+node bin/setup-hooks.mjs --remove   # undo
+```
+
+Git worktrees of one repo share that setting. `git push --no-verify` skips the hook; CI still runs.
+
 ## Limitations
 
 - Works only with local projects: git runs on this machine, so remote T3 environments are unsupported.
