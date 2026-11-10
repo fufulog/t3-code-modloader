@@ -1044,25 +1044,16 @@ if (!NS.commitGraph) {
       if (v) await this.run("Pull", "pull", { ffOnly: v.mode === "ff", rebase: v.mode === "rebase" });
     }
 
-    // Toolbar push: the current branch, to its upstream's remote by default.
+    // Toolbar push: a normal push of the current branch, with no confirmation.
+    // Remote is the upstream's remote, else origin (or the first remote); Set Upstream only when there is no upstream yet.
     async pushCurrent() {
       const br = this.currentBranch;
       if (!br) return dialog(this.root, { message: "Check out a branch to push it.", action: null, cancel: "OK" });
       if (!this.remotes.length) return dialog(this.root, { message: "This repository has no remotes.", action: null, cancel: "OK" });
       const head = this.data.refs.heads.find((h) => h.name === br);
-      const sel = this.remoteSelect();
       const upRemote = head?.upstream && this.remotes.find((r) => head.upstream.startsWith(`${r}/`));
-      if (upRemote) sel.value = upRemote;
-      const v = await dialog(this.root, {
-        message: `Push <b>${esc(br)}</b>${head?.upstream ? ` to <b>${esc(head.upstream)}</b>` : ""}?${head?.track ? ` <span class="t3cg-muted">(${esc(head.track)})</span>` : ""}`,
-        inputs: [
-          sel,
-          { type: "checkbox", name: "setUpstream", label: "Set Upstream", value: !head?.upstream },
-          { type: "select", name: "force", label: "Push mode", value: "none", options: [{ value: "none", label: "Normal" }, { value: "lease", label: "Force With Lease" }, { value: "force", label: "Force" }] },
-        ],
-        action: "Yes, push",
-      });
-      if (v) await this.run("Push", "pushBranch", { name: br, remote: v.remote, setUpstream: v.setUpstream, force: v.force });
+      const remote = upRemote || (this.remotes.includes("origin") ? "origin" : this.remotes[0]);
+      await this.run("Push", "pushBranch", { name: br, remote, setUpstream: !head?.upstream, force: "none" });
     }
 
     // ---- actions
