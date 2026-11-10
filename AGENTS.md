@@ -102,6 +102,8 @@ test/                    plain node tests, no framework: `npm test`
 - Two mods with the same id (a folder and a zip) are reported as duplicates; the first found wins.
 - A new mod dropped into `mods/` starts under Available on purpose: mods run with full access, so nothing new runs until the owner loads it.
 - Changes in the Mods window are staged and only applied (with one window reload) when **Confirm** is pressed.
+- A mod's menu entry or tab title vanishes after the mod is removed and re-added in the Mods window, even though status.json says it is enabled with all anchors present: a stale cache. While the mod was off T3 served the chunk (e.g. `PanelLayoutControls`) unpatched and Chromium cached it, so the reload after re-adding reused the unpatched copy. `reloadWindows` in `src/main/loader.cjs` must `await` `session.clearCache()` and `clearCodeCaches({})` before `reloadIgnoringCache()`; the test in `test/mods.test.mjs` checks that order. Do not make it fire-and-forget again. To repair a live window that already has a stale chunk, run the same sequence from an `--eval-only` script (awaited clears, then `wc.reloadIgnoringCache()`). Confirm by checking the chunk was requested in the loader log.
+- A T3 started by the legacy launcher leaves its Node inspector open (for example `127.0.0.1:38755`, `--inspect-brk`), so a plain `t3mod-inject.mjs` fails with "inspector did not come up" on 9229. Pass `--port <port> --pid <that process's pid> --keep-open` (find both with `pgrep -af t3code`).
 - `git.cjs` validates every ref/path/hash and runs git with `execFile` (no shell). Keep it that way; add a hostile-input test for any new git op.
 
 ## Where things live outside the repo
