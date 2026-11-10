@@ -655,10 +655,20 @@ function loaderApi(electron) {
   return api;
 }
 
-function reloadWindows(electron) {
+/**
+ * Reload T3's window so patches are applied to (or taken off) the chunks. The caches are emptied and the
+ * clearing awaited BEFORE the reload: a chunk served unpatched while a mod was off is otherwise reused from
+ * the cache after the mod is turned back on, and the mod silently does nothing (its menu entry is missing).
+ */
+async function reloadWindows(electron) {
   for (const wc of electron.webContents.getAllWebContents()) {
     if (wc.getType() === "window" && wc.getURL().startsWith("t3code://app/")) {
-      wc.session.clearCache?.().catch(() => {});
+      try {
+        await wc.session.clearCache?.();
+        await wc.session.clearCodeCaches?.({});
+      } catch (e) {
+        log(`cache clear before reload failed: ${e.message}`);
+      }
       wc.reloadIgnoringCache();
     }
   }
@@ -839,4 +849,4 @@ async function live({ reload = true, electron: injected } = {}) {
   return { status: s.status, log: s.log.slice(-15) };
 }
 
-module.exports = { live, cold, _internals: { patchChunk, verifyMods, loadMods, loaderApi, setupMain, refreshMods, applyStatuses, failMod, unloadMod, state } };
+module.exports = { live, cold, _internals: { reloadWindows, patchChunk, verifyMods, loadMods, loaderApi, setupMain, refreshMods, applyStatuses, failMod, unloadMod, state } };

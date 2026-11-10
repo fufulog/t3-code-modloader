@@ -183,4 +183,23 @@ test("optional patches: a miss never disables the mod, a required miss does", ()
   assert.equal(out.text, "const a=1;//must//extra");
 });
 
+{
+  const name = "reload empties the caches first (a stale unpatched chunk must not survive a mod being turned back on)";
+  const { _internals } = require("../src/main/loader.cjs");
+  const order = [];
+  const wc = {
+    getType: () => "window",
+    getURL: () => "t3code://app/",
+    reloadIgnoringCache: () => order.push("reload"),
+    session: {
+      clearCache: () => new Promise((r) => setTimeout(() => (order.push("clearCache"), r()), 20)),
+      clearCodeCaches: async () => void order.push("clearCodeCaches"),
+    },
+  };
+  await _internals.reloadWindows({ webContents: { getAllWebContents: () => [wc] } });
+  assert.deepEqual(order, ["clearCache", "clearCodeCaches", "reload"]);
+  n++;
+  console.log(`ok   ${name}`);
+}
+
 console.log(`\n${n} tests passed`);
