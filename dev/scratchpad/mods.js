@@ -1,0 +1,14 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://")) ;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = (x) => wc.executeJavaScript(x);
+const z = wc.getZoomFactor();
+const shot = async (name, rect) => { const [x,y,w,h]=rect; const img = await wc.capturePage({x:Math.max(0,Math.round(x*z)),y:Math.max(0,Math.round(y*z)),width:Math.round(w*z),height:Math.round(h*z)}); require("fs").writeFileSync(ARGS.out+"/"+name+".png", img.toPNG()); };
+const info = await ev(`(() => { const b=document.querySelector('button[aria-label="Mods"]'); if(!b) return null; const r=b.parentElement.parentElement.parentElement.getBoundingClientRect(); const br=b.getBoundingClientRect(); return {foot:[r.x,r.y,r.width,r.height], btn:[br.x,br.y,br.width,br.height], svg:b.querySelector('svg')?.getBoundingClientRect().width}; })()`);
+if (!info) return "no mods button";
+await shot("footer", [0, info.foot[1]-10, 420, info.foot[3]+20]);
+await ev(`document.querySelector('button[aria-label="Mods"]').click()`);
+await sleep(1200);
+const d = await ev(`(() => { const r=document.querySelector('.t3m-dialog')?.getBoundingClientRect(); return r&&[r.x,r.y,r.width,r.height]; })()`);
+if (d) await shot("modal", d);
+return JSON.stringify({info, d});

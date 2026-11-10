@@ -1,0 +1,26 @@
+const { webContents } = require("electron");
+const get = () => webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = async (x) => { try { return await get().executeJavaScript(x); } catch (e) { throw new Error("EV FAIL: " + x.slice(0,90) + " :: " + e.message); } };
+const shot = async (name) => { const wc = get(); const z = wc.getZoomFactor(); const d = await ev(`(() => { const r=document.querySelector('.t3m-dialog').getBoundingClientRect(); return [r.x,r.y,r.width,r.height]; })()`); const img = await wc.capturePage({x:Math.round(d[0]*z),y:Math.round(d[1]*z),width:Math.round(d[2]*z),height:Math.round(d[3]*z)}); require("fs").writeFileSync(ARGS.out+"/"+name+".png", img.toPNG()); };
+const status = () => ev(`fetch('/__t3mod/status.json').then(r=>r.json()).then(j=>JSON.stringify(Object.fromEntries(Object.entries(j.mods).map(([k,v])=>[k,v.ok]))))`);
+const out = {};
+await ev(`document.querySelector('button[aria-label="Mods"]').click()`); await sleep(600);
+await ev(`document.querySelector('[data-act=rescan]').click()`); await sleep(600);
+await ev(`document.querySelector('.t3m-item[data-id=hello]').click()`); await sleep(300);
+await shot("avail");
+out.before = await status();
+await ev(`document.querySelector('[data-act=toggle]').click()`);
+await sleep(7000);
+out.afterLoad = await status();
+await ev(`document.querySelector('button[aria-label="Mods"]').click()`); await sleep(800);
+out.loadedCols = await ev(`JSON.stringify([...document.querySelectorAll('[data-list=loaded] .t3m-name')].map(e=>e.textContent))`);
+await ev(`document.querySelector('.t3m-item[data-id=hello]').click()`); await sleep(300);
+await shot("loaded");
+await ev(`document.querySelector('[data-act=toggle]').click()`);
+await sleep(7000);
+out.afterUnload = await status();
+out.config = require("fs").readFileSync(require("os").homedir()+"/.config/t3-modloader/config.json","utf8");
+out.log = state_log();
+function state_log(){ return (globalThis.__t3modMain.log||[]).slice(-8); }
+return JSON.stringify(out, null, 1);

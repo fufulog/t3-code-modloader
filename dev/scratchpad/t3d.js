@@ -1,0 +1,17 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = (x) => wc.executeJavaScript(x);
+const z = wc.getZoomFactor();
+await ev(`(async()=>{const c=document.querySelector('diffs-container');const sr=c.shadowRoot; const el=[...sr.querySelectorAll('[data-line-type="change-addition"]')][3]; const r=el.getBoundingClientRect();
+ for (const t of ['pointerover','pointerenter','pointermove','mouseover','mousemove']) el.dispatchEvent(new PointerEvent(t,{bubbles:true,composed:true,clientX:r.x+5,clientY:r.y+8,pointerType:'mouse'}));
+ await new Promise(r=>setTimeout(r,300));
+ const b=sr.querySelector('[data-utility-button]'); const br=b.getBoundingClientRect(); const o={bubbles:true,composed:true,clientX:br.x+5,clientY:br.y+5,pointerType:'mouse',button:0};
+ for (const t of ['pointerdown','mousedown','pointerup','mouseup','click']) b.dispatchEvent(t.startsWith('pointer')?new PointerEvent(t,o):new MouseEvent(t,o));
+})()`);
+await sleep(800);
+const info = await ev(`({ta: !!document.querySelector('.t3cg-t3diff textarea, .t3cg-t3diff [contenteditable]'), html: document.querySelector('.t3cg-t3diff').innerText.slice(0,0), ann: document.querySelectorAll('.t3cg-t3diff [data-annotation-slot],.t3cg-t3diff slot').length})`);
+const r = await ev(`(()=>{const r=document.querySelector('.t3cg-diff-overlay').getBoundingClientRect();return [r.x,r.y,r.width,r.height]})()`);
+const img = await wc.capturePage({x:Math.round(r[0]*z),y:Math.round(r[1]*z),width:Math.round(r[2]*z),height:Math.round(Math.min(r[3],1052)*z)});
+require("fs").writeFileSync(ARGS.out+"/t3-click.png", img.toPNG());
+return JSON.stringify(info);

@@ -1,0 +1,23 @@
+const { BrowserWindow } = require("electron");
+const fs = require("fs");
+const wc = BrowserWindow.getAllWindows()[0].webContents;
+const z = wc.getZoomFactor();
+const js = (s) => wc.executeJavaScript(s, true);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+for (let i = 0; i < 20 && !(await js(`!!document.querySelector(".t3cg tr.t3cg-row")`)); i++) await sleep(250);
+const res = await js(`(async () => {
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const root = document.querySelector(".t3cg");
+  const scrolls = () => { const o = []; for (let e = root; e; e = e.parentElement) if (e.scrollLeft) o.push((e.className || e.tagName).toString().slice(0, 30) + ":" + e.scrollLeft); return o; };
+  root.querySelector("[data-act=branches]").click(); await sleep(100);
+  const dd = root.querySelector(".t3cg-dd").getBoundingClientRect(), rr = root.getBoundingClientRect();
+  const open = scrolls();
+  root.querySelector(".t3cg-dd input[data-all]").click(); await sleep(400);
+  return { open, afterAll: scrolls(), dd: [dd.left, dd.right], root: [rr.left, rr.right], shot: { x: rr.left, y: rr.top, width: rr.width, height: 220 } };
+})()`);
+const s = res.shot;
+fs.writeFileSync(ARGS.out + "/dd.png", (await wc.capturePage({ x: Math.round(s.x * z), y: Math.round(s.y * z), width: Math.round(s.width * z), height: Math.round(s.height * z) })).toPNG());
+await js(`document.querySelector(".t3cg-dd input[type=text]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); 0`);
+res.closed = await js(`!document.querySelector(".t3cg-dd")`);
+delete res.shot;
+return res;

@@ -1,0 +1,15 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = (x) => wc.executeJavaScript(x);
+await ev(`document.querySelector('button[aria-label="Mods"]').click()`); await sleep(500);
+await ev(`document.querySelector('[data-act=rescan]').click()`); await sleep(500);
+await ev(`document.querySelector('.t3m-item[data-id=hello]').click()`); await sleep(400);
+const img = await wc.capturePage();
+const z = wc.getZoomFactor();
+require("fs").writeFileSync(ARGS.out+"/modal2.png", img.toPNG());
+await ev(`document.querySelector('.t3m-item[data-id=commit-graph]').click()`); await sleep(300);
+const img2 = await wc.capturePage();
+require("fs").writeFileSync(ARGS.out+"/modal3.png", img2.toPNG());
+await ev(`document.querySelector('[data-act=close]').click()`);
+return "ok";

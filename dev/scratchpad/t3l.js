@@ -1,0 +1,11 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = (x) => wc.executeJavaScript(x);
+const st = () => ev(`({t3: !!document.querySelector('.t3cg-t3diff'), plain: !!document.querySelector('table.t3cg-diff'), btn: (b=>b&&[b.title,b.getAttribute('aria-pressed'),b.parentElement.hidden])(document.querySelector('[data-act=legacy]'))})`);
+const out = {start: await st()};
+await ev(`document.querySelector('[data-act=legacy]').click()`); await sleep(1500); out.legacy = await st();
+await ev(`document.querySelector('[data-view=full]').click()`); await sleep(1200); out.legacyFull = await st();
+await ev(`document.querySelector('[data-act=legacy]').click()`); await sleep(2500); out.back = await st();
+out.stored = await ev(`localStorage.getItem('t3mod:commit-graph:legacy-diff')`);
+return JSON.stringify(out);

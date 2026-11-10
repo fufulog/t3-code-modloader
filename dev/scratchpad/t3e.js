@@ -1,0 +1,14 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = (x) => wc.executeJavaScript(x);
+const z = wc.getZoomFactor();
+const before = await ev(`document.body.innerText.length`);
+const r1 = await ev(`(()=>{const ta=document.querySelector('.t3cg-t3diff textarea'); if(!ta) return 'no textarea'; const set=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set; set.call(ta,'spike test comment'); ta.dispatchEvent(new Event('input',{bubbles:true})); return 'typed'})()`);
+await sleep(300);
+const r2 = await ev(`(()=>{const b=[...document.querySelectorAll('.t3cg-t3diff button')].find(b=>b.textContent.trim()==='Comment'); if(!b) return 'no button'; b.click(); return 'clicked'})()`);
+await sleep(800);
+const chip = await ev(`(()=>{const t=document.body.innerText; const i=t.indexOf('spike test comment'); return {found:i>=0, ctx: i>=0? t.slice(Math.max(0,i-200), i+80):null}})()`);
+const img = await wc.capturePage();
+require("fs").writeFileSync(ARGS.out+"/t3-win.png", img.toPNG());
+return JSON.stringify({r1,r2,chip});

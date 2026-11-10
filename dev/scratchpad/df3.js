@@ -1,0 +1,11 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = (x) => wc.executeJavaScript(x);
+const out = [];
+out.push(await ev(`document.querySelectorAll('.t3cg-diff-overlay').length`));
+await ev(`document.querySelector('.t3cg-diff-head [data-act=close]').click()`); await sleep(200);
+out.push(await ev(`document.querySelectorAll('.t3cg-diff-overlay').length`));
+await ev(`document.querySelector('.t3cg-diff-head [data-act=close]')?.click()`); await sleep(200);
+out.push(await ev(`document.querySelectorAll('.t3cg-diff-overlay').length`));
+return out;

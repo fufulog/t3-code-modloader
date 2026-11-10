@@ -1,0 +1,12 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = (x) => wc.executeJavaScript(x);
+const z = wc.getZoomFactor();
+const shot = async (name) => { const r = await ev(`(()=>{const r=document.querySelector('.t3m-cols').getBoundingClientRect();return [r.x,r.y,r.width,r.height]})()`); const img = await wc.capturePage({x:Math.round(r[0]*z),y:Math.round(r[1]*z),width:Math.round(r[2]*z),height:Math.round(r[3]*z)}); require("fs").writeFileSync(ARGS.out+"/"+name+".png", img.toPNG()); };
+await ev(`document.querySelector('button[aria-label="Mods"]').click()`);
+await sleep(1000);
+await ev(`document.querySelector('[data-act=rescan]').click()`);
+await sleep(800);
+await shot("arr1");
+return await ev(`[...document.querySelectorAll('.t3m-row')].map(r=>r.innerText.replace(/\\s+/g,' ')+' | '+(r.querySelector('.t3m-arrow')?.title||'no arrow'))`);

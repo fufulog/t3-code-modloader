@@ -1,0 +1,17 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = (x) => wc.executeJavaScript(x);
+const z = wc.getZoomFactor();
+await ev(`(()=>{const r=[...document.querySelectorAll('.t3cg tbody tr')].find(t=>!t.classList.contains('t3cg-details-row')&&t.dataset.key&&t.dataset.key!=='*'); r&&r.click()})()`);
+await sleep(1500);
+await ev(`document.querySelector('.t3cg-file-row').click()`);
+await sleep(1500);
+const r = await ev(`(()=>{const e=document.querySelector('.t3cg-diff-overlay'); if(!e) return null; const r=e.getBoundingClientRect(); const h=e.querySelector('.t3cg-diff-head'); return {r:[r.x,r.y,r.width,r.height], kids:[...h.children].map(c=>c.tagName+'.'+c.className), x:!!h.querySelector('svg path[d*="M18 6"]')}})()`);
+if (!r) return "no overlay";
+const img = await wc.capturePage({x:Math.round(r.r[0]*z),y:Math.round(r.r[1]*z),width:Math.round(r.r[2]*z),height:Math.round(120*z)});
+require("fs").writeFileSync(ARGS.out+"/df.png", img.toPNG());
+const before = await ev(`!!document.querySelector('.t3cg-diff-overlay')`);
+await ev(`document.querySelector('.t3cg-diff-head [data-act=close]').click()`);
+await sleep(200);
+return JSON.stringify({r, before, afterClick: await ev(`!!document.querySelector('.t3cg-diff-overlay')`)});

@@ -1,0 +1,14 @@
+const { BrowserWindow } = require("electron");
+const wc = BrowserWindow.getAllWindows()[0].webContents;
+const js = (s) => wc.executeJavaScript(s, true);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+for (let i = 0; i < 20 && !(await js(`!!document.querySelector(".t3cg tr.t3cg-row")`)); i++) await sleep(250);
+const z = wc.getZoomFactor();
+const p = await js(`(() => { const r = document.querySelectorAll(".t3cg tr.t3cg-row")[3].getBoundingClientRect(); return { x: r.x + 100, y: r.y + r.height / 2 }; })()`);
+wc.sendInputEvent({ type: "mouseMove", x: Math.round(p.x * z), y: Math.round(p.y * z) });
+await sleep(200);
+const res = await js(`(() => { const rows = [...document.querySelectorAll(".t3cg tr.t3cg-row td")]; const h = rows.find(td => td.matches(":hover")); const n = rows.find(td => !td.matches(":hover")); const g = getComputedStyle(h).backgroundColor; return { hover: g, normal: getComputedStyle(n).backgroundColor, sel: getComputedStyle(document.querySelector(".t3cg")).getPropertyValue("--t3cg-selected") }; })()`);
+const r = await js(`(() => { const c = document.querySelector(".t3cg").getBoundingClientRect(); return { x: c.x, y: c.y + 90, width: c.width, height: 200 }; })()`);
+require("fs").writeFileSync(ARGS.out + "/hover.png", (await wc.capturePage({ x: Math.round(r.x * z), y: Math.round(r.y * z), width: Math.round(r.width * z), height: Math.round(r.height * z) })).toPNG());
+wc.sendInputEvent({ type: "mouseMove", x: 5, y: 5 });
+return res;

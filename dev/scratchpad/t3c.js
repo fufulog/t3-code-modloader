@@ -1,0 +1,11 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = (x) => wc.executeJavaScript(x);
+const info = await ev(`(async()=>{const c=document.querySelector('diffs-container');const sr=c.shadowRoot; const el=[...sr.querySelectorAll('[data-line-type="change-addition"]')][3]; const r=el.getBoundingClientRect(); const x=r.x+5,y=r.y+8;
+ for (const t of ['pointerover','pointerenter','pointermove','mouseover','mousemove']) el.dispatchEvent(new PointerEvent(t,{bubbles:true,composed:true,clientX:x,clientY:y,pointerType:'mouse'}));
+ await new Promise(r=>setTimeout(r,300));
+ const cand=[...c.shadowRoot.querySelectorAll('*')].filter(e=>/utility/i.test(e.getAttributeNames().join(' ')+e.className+e.tagName)).map(e=>e.tagName+'|'+e.getAttributeNames().join(',')+'|'+Math.round(e.getBoundingClientRect().x)+','+Math.round(e.getBoundingClientRect().y));
+ const light=[...c.querySelectorAll('*')].map(e=>e.tagName+'|'+e.getAttributeNames().join(','));
+ return {cand, light: light.slice(0,5), slots:[...sr.querySelectorAll('slot')].map(s=>s.name)}})()`);
+return JSON.stringify(info);

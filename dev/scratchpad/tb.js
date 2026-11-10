@@ -1,0 +1,10 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const ev = (x) => wc.executeJavaScript(x);
+const z = wc.getZoomFactor();
+const r = await ev(`(()=>{const e=document.querySelector('.t3cg-toolbar'); if(!e) return null; const r=e.getBoundingClientRect(); return {r:[r.x,r.y,r.width,r.height], xs:[...e.querySelectorAll('.t3cg-icon-btn')].map(b=>Math.round(b.getBoundingClientRect().x))}})()`);
+if (!r) return "graph panel not open";
+const [x,y,w,h]=r.r;
+const img = await wc.capturePage({x:Math.round(x*z),y:Math.round((y-30)*z),width:Math.round(w*z),height:Math.round((h+60)*z)});
+require("fs").writeFileSync(ARGS.out+"/tb.png", img.toPNG());
+return JSON.stringify(r.xs);

@@ -1,0 +1,17 @@
+const { webContents } = require("electron");
+const wc = webContents.getAllWebContents().find(w => w.getURL().startsWith("t3code://"));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ev = (x) => wc.executeJavaScript(x);
+const z = wc.getZoomFactor();
+await ev(`document.querySelector('button[aria-label="Mods"]').click()`); await sleep(1500);
+await ev(`document.querySelector('[data-act=rescan]').click()`); await sleep(1100);
+const lab = () => ev(`(b=>b.hidden?'hidden':b.textContent+' | '+b.title)(document.querySelector('[data-act=apply]'))`);
+const out=[await lab()];
+await ev(`document.querySelector('.t3m-arrow[data-id=zz-a]').click()`); out.push(await lab());
+await ev(`document.querySelector('.t3m-arrow[data-id=zz-b]').click()`); out.push(await lab());
+await ev(`document.querySelector('.t3m-arrow[data-id=commit-graph]').click()`); out.push(await lab());
+const r = await ev(`(()=>{const r=document.querySelector('.t3m-foot').getBoundingClientRect();return [r.x,r.y,r.width,r.height]})()`);
+const img = await wc.capturePage({x:Math.round(r[0]*z),y:Math.round(r[1]*z),width:Math.round(r[2]*z),height:Math.round(r[3]*z)});
+require("fs").writeFileSync(ARGS.out+"/cf.png", img.toPNG());
+await ev(`document.querySelector('[data-act=discard]').click()`);
+return out;
