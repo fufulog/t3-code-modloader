@@ -57,7 +57,7 @@ test/                    plain node tests, no framework: `npm test`
 
    The inject script finds the T3 main process, opens the Node inspector on 127.0.0.1 through SIGUSR1, runs your code, and closes the inspector. It checks the process catches SIGUSR1 first, so it can never kill T3. `FILE` is the body of an async function: `require` works (`require("electron")`), `ARGS.out` holds `--arg out=…`, `return` a string for output, top-level `await` is fine.
 
-   Write these throwaway scripts in your scratchpad or a temp dir, **not in the repo**. The pattern every one of them uses:
+   Examples of every kind of check (open the Mods window, screenshot a panel, click the diff "+", extract T3's asar) are in `dev/scratchpad/` (index in its README); copy and adapt one. Write new throwaway scripts in your scratchpad or a temp dir, not in the repo. The pattern they all use:
 
    ```js
    const { webContents } = require("electron");
