@@ -112,6 +112,75 @@ async function repoRoot(cwd) {
   return root;
 }
 
+// ---- finding repositories ----------------------------------------------------
+
+const SCAN_DEPTH = 2; // folders below the workspace that are searched (children and grandchildren)
+const SCAN_MAX_DIRS = 4000;
+const SCAN_MAX_REPOS = 40;
+const SCAN_SKIP = new Set(["node_modules", "vendor", "target", "dist", "build", "__pycache__"]);
+
+/** A folder is a repo when it has a `.git` directory, or a `.git` file that is not a submodule's link. */
+async function isRepoDir(dir) {
+  let st;
+  try {
+    st = await fs.promises.stat(path.join(dir, ".git"));
+  } catch {
+    return false;
+  }
+  if (st.isDirectory()) return true;
+  if (!st.isFile()) return false;
+  try {
+    const fh = await fs.promises.open(path.join(dir, ".git"), "r");
+    try {
+      const { buffer, bytesRead } = await fh.read(Buffer.alloc(512), 0, 512, 0);
+      return !/[\\/]modules[\\/]/.test(buffer.toString("utf8", 0, bytesRead)); // submodule: gitdir: ../.git/modules/x
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The repositories a workspace folder holds: the repo that contains it (if any), plus any repo
+ * up to SCAN_DEPTH folders below it. Sorted by name, case-insensitive. Each item is { cwd, name }
+ * where cwd is what the other ops take (the workspace itself for the containing repo).
+ * Never throws: a folder that cannot be read just contributes nothing.
+ */
+async function findRepos(cwd) {
+  str(cwd, "cwd", 4096);
+  if (!path.isAbsolute(cwd)) throw new UserError("workspace path must be absolute");
+  if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new UserError(`folder not found on this machine: ${cwd}`);
+  const found = new Map(); // repo root -> { cwd, name }
+  const own = await git(cwd, ["rev-parse", "--show-toplevel"], { allowFail: true });
+  if (own.code === 0) {
+    const top = path.resolve(own.stdout.trim());
+    found.set(top, { cwd, name: path.basename(top) });
+  }
+  let visited = 0;
+  async function scan(dir, depth) {
+    let entries;
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    const subdirs = entries.filter((e) => e.isDirectory() && !e.isSymbolicLink() && !e.name.startsWith(".") && !SCAN_SKIP.has(e.name));
+    const hits = await Promise.all(subdirs.map(async (e) => ((visited++, await isRepoDir(path.join(dir, e.name))) ? e.name : null)));
+    for (let i = 0; i < subdirs.length && found.size < SCAN_MAX_REPOS; i++) {
+      const full = path.join(dir, subdirs[i].name);
+      if (hits[i]) {
+        // A repo already found as the workspace's own is not listed twice.
+        const real = await fs.promises.realpath(full).catch(() => full);
+        if (![...found.keys()].some((k) => k === full || k === real)) found.set(full, { cwd: full, name: subdirs[i].name });
+      } else if (depth + 1 < SCAN_DEPTH && visited < SCAN_MAX_DIRS) await scan(full, depth + 1);
+    }
+  }
+  await scan(cwd, 0);
+  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }) || a.cwd.localeCompare(b.cwd));
+}
+
 // ---- read ops ---------------------------------------------------------------
 
 async function gitDir(root) {
@@ -526,6 +595,7 @@ const reads = {
 async function dispatch(payload) {
   if (!payload || typeof payload !== "object") throw new UserError("bad request");
   const { op } = payload;
+  if (op === "findRepos") return findRepos(payload.cwd); // runs before there is a repo to resolve
   const root = await repoRoot(payload.cwd);
   if (Object.hasOwn(reads, op)) return reads[op](root, payload);
   if (Object.hasOwn(actions, op)) {
@@ -549,4 +619,4 @@ module.exports.register = ({ scope, isTrustedSender, log: say }) => {
     }
   });
 };
-module.exports._test = { dispatch, parseNumstat, parseNameStatus, parseStatus };
+module.exports._test = { dispatch, findRepos, parseNumstat, parseNameStatus, parseStatus };

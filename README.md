@@ -45,6 +45,7 @@ The modloader itself is the built-in `core` mod: it owns the Mods button and win
 
 ## Commit Graph
 
+- Finds repositories up to two folders below the thread's workspace (plus the repo that contains it; submodules and `node_modules` are skipped). One repo shows as before. Several are stacked alphabetically, each with a chevron on its header line to fold it (remembered per repo; a folded repo is not polled).
 - Graph lanes with colours that stay stable per branch. Merge commits are muted, and HEAD and uncommitted changes show as hollow nodes.
 - Stashes appear as rows above their base commit.
 - Ref labels: local branch with its remote, remote-only branches, tags, and stashes.

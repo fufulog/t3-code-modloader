@@ -28,6 +28,18 @@ if (!NS.commitGraph) {
     if (!r?.ok) throw new Error(r?.error ?? "git failed");
     return r.data;
   };
+  // Stacked repos all load at once on open; this keeps it to a few git processes at a time, top repo first.
+  const gate = { running: 0, waiting: [] };
+  const limited = async (fn) => {
+    if (gate.running >= 3) await new Promise((r) => gate.waiting.push(r));
+    gate.running++;
+    try {
+      return await fn();
+    } finally {
+      gate.running--;
+      gate.waiting.shift()?.();
+    }
+  };
   const showMenu = async (ev, items) => {
     ev.preventDefault();
     ev.stopPropagation();
@@ -360,20 +372,27 @@ if (!NS.commitGraph) {
   // ---- the view ---------------------------------------------------------------------
   const STORAGE = "t3mod:commit-graph:v1";
   const LEGACY_KEY = "t3mod:commit-graph:legacy-diff";
+  // One object shared by every view, so two repos stacked in a surface do not overwrite each other's saved settings.
+  let sharedPrefs = null;
   const loadPrefs = () => {
+    if (sharedPrefs) return sharedPrefs;
     try {
-      return JSON.parse(localStorage.getItem(STORAGE)) ?? {};
+      sharedPrefs = JSON.parse(localStorage.getItem(STORAGE)) ?? {};
     } catch {
-      return {};
+      sharedPrefs = {};
     }
+    return sharedPrefs;
   };
   const savePrefs = (p) => localStorage.setItem(STORAGE, JSON.stringify(p));
 
   class GraphView {
-    constructor(host) {
+    /** `multi`: this view is one of several stacked repos, so its header gets a fold chevron. */
+    constructor(host, { multi = false } = {}) {
       ensureStyle();
       this.host = host;
+      this.multi = multi;
       this.cwd = null;
+      this.workspace = null;
       this.visible = true;
       this.maxCommits = PAGE;
       this.data = null;
@@ -385,7 +404,7 @@ if (!NS.commitGraph) {
       this.prefs.widths ??= {};
       host.innerHTML = `
         <div class="t3cg" tabindex="-1">
-          <div class="t3cg-repo"><span class="t3cg-repo-name"></span></div>
+          <div class="t3cg-repo"${multi ? ` data-act="fold" role="button" tabindex="0" aria-expanded="true" title="Fold or unfold this repository"` : ""}>${multi ? `<span class="t3cg-fold">${SVG.chevron}</span>` : ""}<span class="t3cg-repo-name"></span></div>
           <div class="t3cg-toolbar">
             <button type="button" class="t3cg-dd-btn" data-act="branches" title="Branches" aria-label="Branches"><span class="t3cg-muted t3cg-dd-ico">${SVG.branch}</span><span class="t3cg-dd-label">All</span>${SVG.chevron}</button>
             <div class="t3cg-state"></div>
@@ -439,6 +458,7 @@ if (!NS.commitGraph) {
     }
 
     destroy() {
+      this.loadSeq++; // a load still waiting its turn gives up
       clearInterval(this.timer);
       clearTimeout(this.hoverTimer);
       clearTimeout(this.hideTimer);
@@ -447,12 +467,14 @@ if (!NS.commitGraph) {
       this.host.innerHTML = "";
     }
 
-    setProps({ cwd, visible, threadRef, t3 }) {
+    setProps({ cwd, workspace, visible, threadRef, t3 }) {
       this.threadRef = threadRef;
       this.t3 = t3;
+      this.workspace = workspace ?? cwd;
       this.visible = visible !== false;
       if (cwd !== this.cwd) {
         this.cwd = cwd;
+        this.applyFold();
         this.maxCommits = PAGE;
         this.expanded.clear();
         this.data = null;
@@ -492,17 +514,30 @@ if (!NS.commitGraph) {
         this.showMessage(`<div class="t3cg-muted">Loading commits…</div>`);
       }
       try {
+        if (this.folded) {
+          // Folded: only the header line is visible, so the name and branch are all that is needed.
+          const info = await limited(() => (seq === this.loadSeq ? git("info", { cwd: this.cwd }) : null));
+          if (seq !== this.loadSeq) return;
+          this.tbody.innerHTML = "";
+          this.showMessage("");
+          this.paintHeader(info);
+          return;
+        }
         const rp = this.repoPrefs();
         const branches = Array.isArray(rp.branches) && rp.branches.length ? rp.branches : null;
-        const data = await git("log", {
-          cwd: this.cwd,
-          maxCommits: this.maxCommits,
-          showRemoteBranches: this.prefs.showRemote !== false,
-          branches,
+        const data = await limited(async () => {
+          if (seq !== this.loadSeq) return null;
+          const log = await git("log", {
+            cwd: this.cwd,
+            maxCommits: this.maxCommits,
+            showRemoteBranches: this.prefs.showRemote !== false,
+            branches,
+          });
+          this.fingerprint = await git("fingerprint", { cwd: this.cwd }).catch(() => null);
+          return log;
         });
         if (seq !== this.loadSeq) return;
         this.data = data;
-        this.fingerprint = await git("fingerprint", { cwd: this.cwd }).catch(() => null);
         this.render();
       } catch (e) {
         if (seq !== this.loadSeq) return;
@@ -519,8 +554,25 @@ if (!NS.commitGraph) {
       }
     }
 
+    // ---- folding (only when several repos are stacked)
+    applyFold() {
+      this.folded = this.multi && !!this.prefs.folded?.[this.cwd];
+      this.host.classList.toggle("t3cg-folded", this.folded);
+      this.$(".t3cg-repo")?.setAttribute("aria-expanded", String(!this.folded));
+    }
+
+    toggleFold() {
+      if (!this.multi) return;
+      this.prefs.folded ??= {};
+      if (this.folded) delete this.prefs.folded[this.cwd];
+      else this.prefs.folded[this.cwd] = true;
+      savePrefs(this.prefs);
+      this.applyFold();
+      if (!this.folded) this.load({ reset: !this.data }); // it may have changed while it was folded and not polled
+    }
+
     async poll() {
-      if (!this.visible || !this.cwd || document.visibilityState !== "visible" || this.busy) return;
+      if (!this.visible || !this.cwd || this.folded || document.visibilityState !== "visible" || this.busy) return;
       try {
         const fp = await git("fingerprint", { cwd: this.cwd });
         if (this.fingerprint && fp !== this.fingerprint) this.load();
@@ -564,11 +616,15 @@ if (!NS.commitGraph) {
       return map;
     }
 
+    paintHeader(info) {
+      this.$(".t3cg-repo-name").innerHTML = `${esc(info.name)}${info.branch ? ` <span class="t3cg-muted">on</span> ${SVG.branch}<span>${esc(info.branch)}</span>` : ` <span class="t3cg-muted">(detached HEAD)</span>`}`;
+    }
+
     render() {
       const { info } = this.data;
       const scrollTop = this.scroller.scrollTop;
       this.hideCard(); // rows are about to be replaced, so a card for the old row would point at nothing
-      this.$(".t3cg-repo-name").innerHTML = `${esc(info.name)}${info.branch ? ` <span class="t3cg-muted">on</span> ${SVG.branch}<span>${esc(info.branch)}</span>` : ` <span class="t3cg-muted">(detached HEAD)</span>`}`;
+      this.paintHeader(info);
       const rp = this.repoPrefs();
       this.$(".t3cg-dd-label").textContent = rp.branches?.length ? (rp.branches.length === 1 ? rp.branches[0].replace(/^refs\/(heads|remotes)\//, "") : `${rp.branches.length} selected`) : "All";
       const st = this.$(".t3cg-state");
@@ -1448,12 +1504,17 @@ if (!NS.commitGraph) {
       else if (id === "copy-abs") copy(abs);
     }
 
+    /** A repo path as T3 knows it: relative to the thread's workspace folder, or null when outside it. */
     workspaceRelative(p) {
-      const { root, cwd } = this.data.info;
-      if (!cwd || cwd === root) return p;
-      if (!cwd.startsWith(root + "/")) return null;
-      const prefix = cwd.slice(root.length + 1) + "/";
-      return p.startsWith(prefix) ? p.slice(prefix.length) : null;
+      const { root } = this.data.info;
+      const ws = this.workspace ?? this.cwd;
+      if (!ws || ws === root) return p;
+      if (ws.startsWith(root + "/")) {
+        const prefix = ws.slice(root.length + 1) + "/"; // the workspace is a folder inside this repo
+        return p.startsWith(prefix) ? p.slice(prefix.length) : null;
+      }
+      if (root.startsWith(ws + "/")) return `${root.slice(ws.length + 1)}/${p}`; // the repo is a folder inside the workspace
+      return null;
     }
 
     openFile(file) {
@@ -1469,6 +1530,7 @@ if (!NS.commitGraph) {
         const t = e.target;
         const act = t.closest("[data-act]")?.dataset.act;
         if (t.closest(".t3cg-overlay,.t3cg-diff-overlay,.t3cg-dd")) return;
+        if (act === "fold") return this.toggleFold();
         if (act === "refresh") return this.load({ reset: !this.data });
         if (act === "find") return this.openFind();
         if (act === "find-close") return this.closeFind();
@@ -1563,6 +1625,10 @@ if (!NS.commitGraph) {
         }
       });
       root.addEventListener("keydown", (e) => {
+        if ((e.key === "Enter" || e.key === " ") && e.target.closest(".t3cg-repo[data-act=fold]")) {
+          e.preventDefault();
+          return this.toggleFold();
+        }
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && !e.target.closest(".t3cg-overlay")) {
           e.preventDefault();
           e.stopPropagation();
@@ -1633,13 +1699,85 @@ if (!NS.commitGraph) {
 
   let portalIds = 0;
 
+  // One graph for a workspace that is a repo; several, stacked and foldable, when the workspace holds more.
+  // The folders up to two levels below the workspace are searched (the main process does the scan).
+  class Stack {
+    constructor(host) {
+      this.host = host;
+      this.views = [];
+      this.signature = null;
+      this.cwd = undefined;
+      this.seq = 0;
+      this.props = {};
+      this.react = null;
+      this.onFocus = () => this.discover();
+      window.addEventListener("focus", this.onFocus);
+    }
+
+    setProps(props) {
+      this.props = props;
+      if (props.cwd !== this.cwd) {
+        this.cwd = props.cwd;
+        this.signature = null;
+        this.discover();
+      }
+      this.views.forEach((v) => this.feed(v));
+    }
+
+    feed({ view, cwd }) {
+      const { visible, threadRef, t3 } = this.props;
+      view.react = this.react;
+      view.setProps({ cwd, workspace: this.cwd, visible, threadRef, t3 });
+    }
+
+    async discover() {
+      const seq = ++this.seq;
+      const workspace = this.cwd;
+      let repos = [];
+      if (workspace) {
+        try {
+          repos = await git("findRepos", { cwd: workspace });
+        } catch {}
+      }
+      if (seq !== this.seq) return;
+      // No repo found: one view on the workspace itself, which says why there is no graph.
+      const list = repos.length ? repos : [{ cwd: workspace, name: "" }];
+      const signature = JSON.stringify(list.map((r) => r.cwd));
+      if (signature === this.signature) return; // nothing new since the last look: keep the views as they are
+      this.signature = signature;
+      this.clear();
+      const multi = list.length > 1;
+      this.host.classList.toggle("t3cg-multi", multi);
+      for (const r of list) {
+        const el = document.createElement("div");
+        el.className = "t3cg-repo-host";
+        this.host.appendChild(el);
+        const entry = { view: new GraphView(el, { multi }), cwd: r.cwd };
+        this.views.push(entry);
+        this.feed(entry);
+      }
+    }
+
+    clear() {
+      for (const { view } of this.views) view.destroy();
+      this.views = [];
+      this.host.querySelectorAll(":scope > .t3cg-repo-host").forEach((el) => el.remove());
+    }
+
+    destroy() {
+      this.seq++;
+      window.removeEventListener("focus", this.onFocus);
+      this.clear();
+    }
+  }
+
   function Surface(props) {
     const R = props.React;
     const ref = R.useRef(null);
     const view = R.useRef(null);
     const [portals, setPortals] = R.useState([]);
     R.useLayoutEffect(() => {
-      view.current = new GraphView(ref.current);
+      view.current = new Stack(ref.current);
       view.current.react = { setPortals, jsx: props.jsx };
       return () => {
         view.current?.destroy();
@@ -1652,6 +1790,6 @@ if (!NS.commitGraph) {
     return props.jsx("div", { ref, className: "t3cg-host", "data-t3mod": "commit-graph", children: portals.map((p) => p.render()) });
   }
 
-  S.global("commitGraph", { Surface, Icon, menuItems, bindOpener, _layout: layout, _GraphView: GraphView, _dialog: dialog });
+  S.global("commitGraph", { Surface, Icon, menuItems, bindOpener, _layout: layout, _GraphView: GraphView, _Stack: Stack, _dialog: dialog });
 }
 });

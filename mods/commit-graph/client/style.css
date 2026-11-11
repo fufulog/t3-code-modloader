@@ -12,6 +12,19 @@
   overflow: clip;
 }
 
+/* One repo per workspace fills the surface. With several, they stack in a scrolling column: each takes an equal
+   share of the height (never less than its minimum), and a folded one shrinks to its header line. */
+.t3cg-repo-host { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; min-height: 0; }
+.t3cg-multi { overflow: hidden auto; }
+.t3cg-multi > .t3cg-repo-host { min-height: 240px; border-top: 1px solid var(--border); }
+.t3cg-multi > .t3cg-repo-host:first-child { border-top: 0; }
+.t3cg-multi > .t3cg-repo-host.t3cg-folded { flex: 0 0 auto; min-height: 0; }
+.t3cg-folded > .t3cg { flex: 0 0 auto; }
+.t3cg-folded > .t3cg > :not(.t3cg-repo) { display: none; }
+/* A dialog or diff opened from one repo takes the whole surface, so it is not squeezed into that repo's share. */
+.t3cg-multi:has(.t3cg-overlay, .t3cg-diff-overlay) > .t3cg-repo-host:not(:has(.t3cg-overlay, .t3cg-diff-overlay)) { display: none; }
+.t3cg-multi:has(.t3cg-overlay, .t3cg-diff-overlay) > .t3cg-repo-host:has(.t3cg-overlay, .t3cg-diff-overlay) { flex: 1 0 100%; border-top: 0; }
+
 /* Theme tokens, also on the hover card, which lives on <body> outside the panel. */
 .t3cg, .t3cg-card {
   --t3cg-fg: var(--foreground);
@@ -63,6 +76,12 @@
 }
 /* Repo name and branch on their own line above the toolbar, so they are not squeezed by the buttons. */
 .t3cg-repo { display: flex; align-items: center; min-width: 0; flex-shrink: 0; padding: 8px 12px 2px; font-weight: 600; }
+.t3cg-repo[data-act=fold] { cursor: pointer; gap: 2px; padding-left: 6px; user-select: none; }
+.t3cg-repo[data-act=fold]:hover { background: var(--t3cg-hover); }
+.t3cg-repo[data-act=fold]:focus-visible { outline: 1px solid var(--ring, var(--t3cg-border)); outline-offset: -1px; }
+.t3cg-fold { display: inline-flex; flex-shrink: 0; color: var(--t3cg-muted); }
+.t3cg-fold .t3cg-ico { transition: transform 0.12s; }
+.t3cg-folded .t3cg-fold .t3cg-ico { transform: rotate(-90deg); }
 .t3cg-repo-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t3cg-repo-name .t3cg-ico { display: inline-block; vertical-align: -1px; margin: 0 2px 0 4px; }
 .t3cg-repo-name .t3cg-ico { width: 12px; height: 12px; color: var(--t3cg-muted); }

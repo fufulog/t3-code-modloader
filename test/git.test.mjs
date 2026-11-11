@@ -1,7 +1,7 @@
 // Exercises every Commit Graph git op against a throwaway repo + bare remote.
 //   node test/git.test.mjs
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -190,6 +190,31 @@ try {
     const l = await op("log", { branches: ["refs/heads/main"] });
     eq(l.commits.length > 0, true, "branch filter");
     await op("checkoutBranch", { name: "main" });
+  });
+  await step("findRepos: two levels deep, alphabetical, skips submodules and node_modules", async () => {
+    const ws = join(base, "ws");
+    const mk = (rel) => {
+      mkdirSync(join(ws, rel), { recursive: true });
+      sh(["init", "-q", "-b", "main", join(ws, rel)], base);
+    };
+    mk("zeta");
+    mk("Alpha");
+    mk("group/inner");
+    mk("group/deep/too-deep"); // three folders down: not searched
+    mk("node_modules/pkg");
+    mkdirSync(join(ws, "plain"), { recursive: true });
+    mkdirSync(join(ws, "sub"), { recursive: true });
+    writeFileSync(join(ws, "sub", ".git"), "gitdir: ../.git/modules/sub\n"); // a submodule's link file
+    const r = await dispatch({ op: "findRepos", cwd: ws });
+    eq(r.map((x) => x.name).join(","), "Alpha,inner,zeta", "names, sorted case-insensitively");
+    eq(r[0].cwd, join(ws, "Alpha"), "cwd of a nested repo is its own folder");
+    // A workspace that is itself a repo is listed with its own cwd.
+    const own = await dispatch({ op: "findRepos", cwd });
+    eq(own.length, 1, "a lone repo is a single entry");
+    eq(own[0].cwd, cwd, "the workspace itself");
+    await rejects(dispatch({ op: "findRepos", cwd: "relative" }), /absolute/);
+    await rejects(dispatch({ op: "findRepos", cwd: join(base, "missing") }), /not found/);
+    await rejects(dispatch({ op: "findRepos" }), /invalid cwd/);
   });
   await step("rejects hostile input", async () => {
     await rejects(op("checkoutBranch", { name: "--orphan=x" }), /invalid/);
